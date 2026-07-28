@@ -1,17 +1,33 @@
 services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: livechat
+    ports:
+      - "55432:5432"
+    volumes:
+      - livechat-db-data:/var/lib/postgresql/data
+
   backend:
     build: ./backend
     restart: unless-stopped
+    depends_on:
+      - db
     env_file:
       - ./backend/.env
     environment:
-      # livechat-db (postgres) tourne déjà en dehors de ce compose sur le port 55432
-      DATABASE_URL: postgresql://postgres:password@host.docker.internal:55432/livechat
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      DATABASE_URL: postgresql://postgres:password@db:5432/livechat
     ports:
       - "3000:3000"
     volumes:
       - ./backend:/app
       - /app/node_modules
     command: sh -c "npx prisma migrate deploy && npm run dev"
+
+volumes:
+  livechat-db-data:
+    external: true
+    name: 1f27dad8a8fe223b604d45c2b8f6457b181cdc6ff1f2184de90a2fe80cc599b1
