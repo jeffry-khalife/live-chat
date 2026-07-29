@@ -1,8 +1,10 @@
 const express = require('express');
 
+const auth = require('../middlewares/auth.js');
+
 const router = express.Router();
 
-router.get('/', (req, res) => {
+router.get('/', auth, (req, res) => {
     res.json({ channels: [] });
 });
 

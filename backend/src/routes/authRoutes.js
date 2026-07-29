@@ -13,24 +13,32 @@ router.post('/register', async (req, res) => {
 		return res.status(400).json({ message: 'Pseudo, email et mot de passe requis.' });
 	}
 
-	const existingUser = await prisma.user.findFirst({
-		where: { OR: [{ email }, { pseudo }] },
-	});
+	try {
+		const existingUser = await prisma.user.findFirst({
+			where: { OR: [{ email }, { pseudo }] },
+		});
 
-	if (existingUser) {
-		return res.status(409).json({ message: 'Ce pseudo ou cet email est déjà utilisé.' });
+		if (existingUser) {
+			return res.status(409).json({ message: 'Ce pseudo ou cet email est déjà utilisé.' });
+		}
+
+		const hashedPassword = await bcrypt.hash(password, 10);
+
+		const user = await prisma.user.create({
+			data: { pseudo, email, password: hashedPassword },
+		});
+
+		return res.status(201).json({
+			user: { id: user.id, pseudo: user.pseudo, email: user.email },
+			token: generateToken(user.id),
+		});
+	} catch (error) {
+		if (error.code === 'P2002') {
+			return res.status(409).json({ message: 'Ce pseudo ou cet email est déjà utilisé.' });
+		}
+		console.error('Register error:', error);
+		return res.status(500).json({ message: 'Erreur serveur.' });
 	}
-
-	const hashedPassword = await bcrypt.hash(password, 10);
-
-	const user = await prisma.user.create({
-		data: { pseudo, email, password: hashedPassword },
-	});
-
-	return res.status(201).json({
-		user: { id: user.id, pseudo: user.pseudo, email: user.email },
-		token: generateToken(user.id),
-	});
 });
 
 router.post('/login', async (req, res) => {
@@ -40,16 +48,21 @@ router.post('/login', async (req, res) => {
 		return res.status(400).json({ message: 'Email et mot de passe requis.' });
 	}
 
-	const user = await prisma.user.findUnique({ where: { email } });
+	try {
+		const user = await prisma.user.findUnique({ where: { email } });
 
-	if (!user || !(await bcrypt.compare(password, user.password))) {
-		return res.status(401).json({ message: 'Email ou mot de passe incorrect.' });
+		if (!user || !(await bcrypt.compare(password, user.password))) {
+			return res.status(401).json({ message: 'Email ou mot de passe incorrect.' });
+		}
+
+		return res.json({
+			user: { id: user.id, pseudo: user.pseudo, email: user.email },
+			token: generateToken(user.id),
+		});
+	} catch (error) {
+		console.error('Login error:', error);
+		return res.status(500).json({ message: 'Erreur serveur.' });
 	}
-
-	return res.json({
-		user: { id: user.id, pseudo: user.pseudo, email: user.email },
-		token: generateToken(user.id),
-	});
 });
 
 module.exports = router;
