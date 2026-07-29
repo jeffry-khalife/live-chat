@@ -1,7 +1,7 @@
 services:
   postgres:
     image: postgres:16-alpine
-    restart: unless-stopped
+    restart: "no"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
@@ -13,7 +13,7 @@ services:
 
   mongo:
     image: mongo:7
-    restart: unless-stopped
+    restart: "no"
     ports:
       - "57017:27017"
     volumes:
@@ -21,14 +21,14 @@ services:
 
   redis:
     image: redis:7-alpine
-    restart: unless-stopped
+    restart: "no"
     ports:
       - "56379:6379"
 
   backend:
     build:
       context: ./backend
-    restart: unless-stopped
+    restart: "no"
     depends_on:
       - postgres
       - mongo
@@ -51,7 +51,7 @@ services:
   frontend:
     build:
       context: ./frontend
-    restart: unless-stopped
+    restart: "no"
     depends_on:
       - backend
     environment:
