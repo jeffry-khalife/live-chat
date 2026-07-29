@@ -1,5 +1,5 @@
 services:
-  db:
+  postgres:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -9,25 +9,59 @@ services:
     ports:
       - "55432:5432"
     volumes:
-      - livechat-db-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql/data
+
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "57017:27017"
+    volumes:
+      - mongo-data:/data/db
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "56379:6379"
 
   backend:
-    build: ./backend
+    build:
+      context: ./backend
     restart: unless-stopped
     depends_on:
-      - db
+      - postgres
+      - mongo
+      - redis
     env_file:
       - ./backend/.env
     environment:
-      DATABASE_URL: postgresql://postgres:password@db:5432/livechat
+      PORT: 3000
+      CLIENT_ORIGIN: http://localhost:5173
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/livechat
+      MONGO_URL: mongodb://mongo:27017/livechat
+      REDIS_URL: redis://redis:6379
     ports:
       - "3000:3000"
     volumes:
       - ./backend:/app
       - /app/node_modules
-    command: sh -c "npx prisma migrate deploy && npm run dev"
+    command: sh -c "npx prisma generate && npx prisma migrate deploy && npm run dev"
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      VITE_API_URL: http://localhost:3000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
 
 volumes:
-  livechat-db-data:
-    external: true
-    name: 1f27dad8a8fe223b604d45c2b8f6457b181cdc6ff1f2184de90a2fe80cc599b1
+  postgres-data:
+  mongo-data:
