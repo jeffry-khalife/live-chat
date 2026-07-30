@@ -7,6 +7,7 @@ const { Server } = require('socket.io');
 const registerChatSocket = require('./sockets/chat.js');
 const registerWebrtcSocket = require('./sockets/webrtc.js');
 const authRoutes = require('./routes/authRoutes.js');
+const profileRoutes = require('./routes/profileRoutes.js');
 const serversRoutes = require('./routes/serversRoutes.js');
 const channelsRoutes = require('./routes/channelsRoutes.js');
 
@@ -21,6 +22,7 @@ app.get('/health', (req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/profile', profileRoutes);
 app.use('/api/servers', serversRoutes);
 app.use('/api/channels', channelsRoutes);
 
