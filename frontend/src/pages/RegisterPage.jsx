@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import './auth.css';
 
 function RegisterPage() {
     const { register } = useAuth();
@@ -22,27 +23,58 @@ function RegisterPage() {
     }
 
     return (
-        <main>
-            <h1>Inscription</h1>
-            <form onSubmit={handleSubmit}>
-                <label>
-                    Pseudo
-                    <input type="text" value={pseudo} onChange={(e) => setPseudo(e.target.value)} required />
-                </label>
-                <label>
-                    Email
-                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-                </label>
-                <label>
-                    Mot de passe
-                    <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-                </label>
-                {error && <p role="alert">{error}</p>}
-                <button type="submit">S'inscrire</button>
-            </form>
-            <p>
-                Déjà un compte ? <Link to="/login">Se connecter</Link>
-            </p>
+        <main className="auth-page">
+            <div className="auth-card">
+                <h1 className="auth-title">
+                    RetroComm<span className="auth-title-accent">Live</span>
+                </h1>
+                <form className="auth-form" onSubmit={handleSubmit}>
+                    <h3 className="auth-subtitle">Inscription</h3>
+                    <label className="auth-field">
+                        <span>Pseudo</span>
+                        <input
+                            type="text"
+                            placeholder="Prénom Nom"
+                            value={pseudo}
+                            onChange={(e) => setPseudo(e.target.value)}
+                            required
+                        />
+                    </label>
+                    <label className="auth-field">
+                        <span>Email</span>
+                        <input
+                            type="email"
+                            placeholder="exemple@email.com"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            required
+                        />
+                    </label>
+                    <label className="auth-field">
+                        <span>Mot de passe</span>
+                        <input
+                            type="password"
+                            placeholder="**********"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                        />
+                    </label>
+                    {error && (
+                        <p className="auth-error" role="alert">
+                            {error}
+                        </p>
+                    )}
+                    <div className="auth-actions">
+                        <Link className="auth-btn auth-btn-login" to="/login">
+                            Retour à la connexion
+                        </Link>
+                        <button className="auth-btn auth-btn-register" type="submit">
+                            Confirmer l'inscription
+                        </button>
+                    </div>
+                </form>
+            </div>
         </main>
     );
 }
