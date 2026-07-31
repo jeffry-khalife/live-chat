@@ -21,8 +21,7 @@ function Avatar({ name = '?', size, style = {} }) {
 }
 
 function HomePage() {
-    const { user, token, logout } = useNavigate ? useAuth() : { user: null, token: null, logout: () => {} };
-    const navigate = useNavigate();
+    const { user, token, logout } = useAuth(); const navigate = useNavigate();
     const [servers, setServers] = useState([]);
     const [selected, setSelected] = useState(null); // server object
     const [messages, setMessages] = useState([]);   // future: from socket
@@ -40,7 +39,7 @@ function HomePage() {
         fetch('/api/servers', { headers: { Authorization: `Bearer ${token}` } })
             .then((r) => r.json())
             .then((data) => setServers(data.servers ?? []))
-            .catch(() => {});
+            .catch(() => { });
     }, [token]);
 
     useEffect(() => {
@@ -88,6 +87,7 @@ function HomePage() {
                 alert(err.message || 'Erreur lors de l\'invitation');
             }
         } catch (err) {
+            console.error(err);
             alert('Erreur lors de l\'invitation');
         }
     }
