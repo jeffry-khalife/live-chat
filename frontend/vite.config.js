@@ -10,7 +10,7 @@ export default defineConfig({
       interval: 300,
     },
     proxy: {
-      '/api': 'http://backend:3000',
+      '/api': 'http://localhost:3001',
     },
   },
 })
