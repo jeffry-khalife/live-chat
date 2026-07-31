@@ -7,6 +7,7 @@ import ChannelList from './components/ChannelList.jsx';
 import CallPanel from './components/CallPanel.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import RegisterPage from './pages/RegisterPage.jsx';
+import ProfilePage from './pages/ProfilePage.jsx';
 import { AuthProvider, useAuth } from './context/AuthContext.jsx';
 
 function ChatLayout() {
@@ -38,6 +39,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <ChatLayout />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <ProfilePage />
               </ProtectedRoute>
             }
           />
