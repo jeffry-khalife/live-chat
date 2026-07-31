@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:16-alpine
+    platform: linux/amd64
     restart: "no"
     environment:
       POSTGRES_USER: postgres
@@ -13,6 +14,7 @@ services:
 
   mongo:
     image: mongo:7
+    platform: linux/amd64
     restart: "no"
     ports:
       - "57017:27017"
@@ -21,6 +23,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    platform: linux/amd64
     restart: "no"
     ports:
       - "56379:6379"
