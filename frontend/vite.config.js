@@ -9,5 +9,8 @@ export default defineConfig({
       usePolling: true,
       interval: 300,
     },
+    proxy: {
+      '/api': 'http://backend:3000',
+    },
   },
 })
