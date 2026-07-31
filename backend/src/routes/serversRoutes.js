@@ -1,11 +1,109 @@
 const express = require('express');
 
+const prisma = require('../config/sql.js');
 const auth = require('../middlewares/auth.js');
+const requireAdmin = require('../middlewares/requireAdmin.js');
 
 const router = express.Router();
 
-router.get('/', auth, (req, res) => {
-    res.json({ servers: [] });
+// Lister tous les serveurs (filtrés par utilisateur si non-admin)
+router.get('/', auth, async (req, res) => {
+	try {
+		// Les admins voient tous les serveurs, les clients ne voient que leurs serveurs
+		const where = req.user.role === 'admin' ? {} : {
+			OR: [
+				{ owner_id: req.user.id },
+				{ members: { some: { user_id: req.user.id } } }
+			]
+		};
+
+		const servers = await prisma.server.findMany({
+			where,
+			include: {
+				channels: { orderBy: { created_at: 'asc' } },
+				_count: { select: { members: true } },
+			},
+			orderBy: { created_at: 'asc' },
+		});
+		return res.json({ servers });
+	} catch (error) {
+		console.error('Get servers error:', error);
+		return res.status(500).json({ message: 'Erreur serveur.' });
+	}
+});
+
+// Créer un serveur (admin uniquement) — crée un salon #général par défaut
+router.post('/', auth, requireAdmin, async (req, res) => {
+	const { name, icon_url } = req.body;
+
+	if (!name?.trim()) {
+		return res.status(400).json({ message: 'Le nom du serveur est requis.' });
+	}
+
+	try {
+		const server = await prisma.server.create({
+			data: {
+				name: name.trim(),
+				icon_url: icon_url || null,
+				owner_id: req.user.id,
+				channels: {
+					create: { name: 'général', type: 'text' },
+				},
+				members: {
+					create: { user_id: req.user.id, role: 'admin' },
+				},
+			},
+			include: { channels: true },
+		});
+		return res.status(201).json({ server });
+	} catch (error) {
+		console.error('Create server error:', error);
+		return res.status(500).json({ message: 'Erreur serveur.' });
+	}
+});
+
+// Ajouter un salon à un serveur (admin uniquement)
+router.post('/:id/channels', auth, requireAdmin, async (req, res) => {
+	const serverId = parseInt(req.params.id);
+	const { name, type } = req.body;
+
+	if (!name?.trim()) {
+		return res.status(400).json({ message: 'Le nom du salon est requis.' });
+	}
+
+	if (type && !['text', 'voice'].includes(type)) {
+		return res.status(400).json({ message: 'Type invalide. Valeurs acceptées : text, voice.' });
+	}
+
+	try {
+		const server = await prisma.server.findUnique({ where: { id: serverId } });
+		if (!server) return res.status(404).json({ message: 'Serveur introuvable.' });
+
+		const channel = await prisma.channel.create({
+			data: { name: name.trim(), type: type || 'text', server_id: serverId },
+		});
+		return res.status(201).json({ channel });
+	} catch (error) {
+		console.error('Create channel error:', error);
+		return res.status(500).json({ message: 'Erreur serveur.' });
+	}
+});
+
+// Supprimer un serveur (admin uniquement)
+router.delete('/:id', auth, requireAdmin, async (req, res) => {
+	const serverId = parseInt(req.params.id);
+
+	try {
+		await prisma.server.delete({ where: { id: serverId } });
+		return res.json({ message: 'Serveur supprimé.' });
+	} catch (error) {
+		if (error.code === 'P2025') {
+			return res.status(404).json({ message: 'Serveur introuvable.' });
+		}
+		console.error('Delete server error:', error);
+		return res.status(500).json({ message: 'Erreur serveur.' });
+	}
 });
 
 module.exports = router;
+
