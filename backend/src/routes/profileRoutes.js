@@ -22,13 +22,25 @@ router.get('/', auth, async (req, res) => {
 });
 
 router.patch('/', auth, async (req, res) => {
-	const { pseudo, email, password } = req.body;
+	const { pseudo, email, password, currentPassword } = req.body;
 
 	if (!pseudo && !email && !password) {
 		return res.status(400).json({ message: 'Nothing to update.' });
 	}
 
+	if (password && !currentPassword) {
+		return res.status(400).json({ message: 'Current password is required.' });
+	}
+
 	try {
+		if (password) {
+			const currentUser = await prisma.user.findUnique({ where: { id: req.user.id } });
+
+			if (!currentUser || !(await bcrypt.compare(currentPassword, currentUser.password))) {
+				return res.status(401).json({ message: 'Incorrect password.' });
+			}
+		}
+
 		if (pseudo || email) {
 			const existingUser = await prisma.user.findFirst({
 				where: {
