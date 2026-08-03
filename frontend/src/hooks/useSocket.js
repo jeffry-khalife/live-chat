@@ -1,5 +1,7 @@
+import { useSocket as useSocketContext } from '../context/SocketContext.jsx';
+
 function useSocket() {
-    return null;
+    return useSocketContext();
 }
 
 export default useSocket;
