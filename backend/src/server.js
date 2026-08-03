@@ -51,6 +51,8 @@ const io = new Server(httpServer, {
     },
 });
 
+app.set('io', io);
+
 registerChatSocket(io);
 registerWebrtcSocket(io);
 
