@@ -82,9 +82,65 @@ router.post('/:id/channels', auth, requireAdmin, async (req, res) => {
 		const channel = await prisma.channel.create({
 			data: { name: name.trim(), type: type || 'text', server_id: serverId },
 		});
+
+		const io = req.app.get('io');
+		if (io) {
+			io.to(`server:${serverId}`).emit('server:channel-created', {
+				serverId,
+				channel,
+			});
+		}
 		return res.status(201).json({ channel });
 	} catch (error) {
 		console.error('Create channel error:', error);
+		return res.status(500).json({ message: 'Erreur serveur.' });
+	}
+});
+
+router.delete('/:serverId/channels/:channelId', auth, async (req, res) => {
+	const serverId = Number.parseInt(req.params.serverId, 10);
+	const channelId = Number.parseInt(req.params.channelId, 10);
+
+	if (Number.isNaN(serverId) || Number.isNaN(channelId)) {
+		return res.status(400).json({ message: 'Paramètres invalides.' });
+	}
+
+	try {
+		const server = await prisma.server.findUnique({
+			where: { id: serverId },
+			select: { id: true, owner_id: true },
+		});
+
+		if (!server) {
+			return res.status(404).json({ message: 'Serveur introuvable.' });
+		}
+
+		const channel = await prisma.channel.findUnique({
+			where: { id: channelId },
+			select: { id: true, server_id: true },
+		});
+
+		if (!channel || channel.server_id !== serverId) {
+			return res.status(404).json({ message: 'Salon introuvable.' });
+		}
+
+		if (req.user.role !== 'admin' && server.owner_id !== req.user.id) {
+			return res.status(403).json({ message: 'Accès refusé.' });
+		}
+
+		await prisma.channel.delete({ where: { id: channelId } });
+
+		const io = req.app.get('io');
+		if (io) {
+			io.to(`server:${serverId}`).emit('server:channel-deleted', {
+				serverId,
+				channelId,
+			});
+		}
+
+		return res.json({ message: 'Salon supprimé' });
+	} catch (error) {
+		console.error('Delete channel error:', error);
 		return res.status(500).json({ message: 'Erreur serveur.' });
 	}
 });
