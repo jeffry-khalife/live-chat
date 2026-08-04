@@ -60,8 +60,13 @@ export function AuthProvider({ children }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [Boolean(refreshToken)]);
 
+    function updateUser(updatedUser) {
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+        setUser(updatedUser);
+    }
+
     return (
-        <AuthContext.Provider value={{ user, token, refreshToken, login, register, logout }}>
+        <AuthContext.Provider value={{ user, token, refreshToken, login, register, logout, updateUser }}>
             {children}
         </AuthContext.Provider>
     );
