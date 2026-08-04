@@ -105,7 +105,7 @@ export function CallProvider({ children }) {
                 video,
                 fromUser: { id: user.id, pseudo: user.pseudo },
             });
-        } catch (err) {
+        } catch {
             setError('Impossible d\'accéder à la caméra/micro.');
             cleanup();
         }
@@ -129,7 +129,7 @@ export function CallProvider({ children }) {
             stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
             socket.emit('call:accept', { toUserId: fromUser.id, callId });
-        } catch (err) {
+        } catch {
             setError('Impossible d\'accéder à la caméra/micro.');
             hangUp();
         }
@@ -180,7 +180,7 @@ export function CallProvider({ children }) {
                 await pc.setLocalDescription(offer);
                 socket.emit('webrtc:offer', { toUserId: fromUserId, callId, sdp: offer });
                 updateCallState('in-call');
-            } catch (err) {
+            } catch {
                 setError('Erreur lors de l\'établissement de l\'appel.');
                 hangUp();
             }
@@ -214,7 +214,7 @@ export function CallProvider({ children }) {
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
                 socket.emit('webrtc:answer', { toUserId: fromUserId, callId, sdp: answer });
-            } catch (err) {
+            } catch {
                 setError('Erreur lors de l\'établissement de l\'appel.');
             }
         }
@@ -228,7 +228,7 @@ export function CallProvider({ children }) {
                     await pc.addIceCandidate(new RTCIceCandidate(candidate));
                 }
                 pendingCandidatesRef.current = [];
-            } catch (err) {
+            } catch {
                 setError('Erreur lors de l\'établissement de l\'appel.');
             }
         }
@@ -242,7 +242,7 @@ export function CallProvider({ children }) {
                 } else {
                     pendingCandidatesRef.current.push(candidate);
                 }
-            } catch (err) {
+            } catch {
                 // ignore malformed/late candidates
             }
         }

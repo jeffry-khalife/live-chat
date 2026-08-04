@@ -18,6 +18,10 @@ router.post('/', auth, async (req, res) => {
 		const server = await prisma.server.findUnique({ where: { id: serverId } });
 		if (!server) return res.status(404).json({ message: 'Serveur introuvable.' });
 
+		if (req.user.role !== 'admin' && server.owner_id !== req.user.id) {
+			return res.status(403).json({ message: 'Accès refusé.' });
+		}
+
 		// Chercher l'utilisateur par pseudo
 		const user = await prisma.user.findUnique({ where: { pseudo: pseudo.trim() } });
 		if (!user) return res.status(404).json({ message: 'Utilisateur introuvable.' });

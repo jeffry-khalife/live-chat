@@ -78,6 +78,10 @@ router.post('/:id/channels', auth, async (req, res) => {
 		const server = await prisma.server.findUnique({ where: { id: serverId } });
 		if (!server) return res.status(404).json({ message: 'Serveur introuvable.' });
 
+		if (req.user.role !== 'admin' && server.owner_id !== req.user.id) {
+			return res.status(403).json({ message: 'Accès refusé.' });
+		}
+
 		const channel = await prisma.channel.create({
 			data: { name: name.trim(), type: type || 'text', server_id: serverId },
 		});
@@ -149,6 +153,13 @@ router.delete('/:id', auth, async (req, res) => {
 	const serverId = parseInt(req.params.id);
 
 	try {
+		const server = await prisma.server.findUnique({ where: { id: serverId } });
+		if (!server) return res.status(404).json({ message: 'Serveur introuvable.' });
+
+		if (req.user.role !== 'admin' && server.owner_id !== req.user.id) {
+			return res.status(403).json({ message: 'Accès refusé.' });
+		}
+
 		await prisma.server.delete({ where: { id: serverId } });
 		return res.json({ message: 'Serveur supprimé.' });
 	} catch (error) {

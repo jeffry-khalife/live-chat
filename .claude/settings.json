@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker network inspect live-chat_default --format '{{range .Containers}}{{.Name}} {{.IPv4Address}} *)",
+      "Bash(start http://localhost:5173)"
+    ]
+  }
+}

@@ -50,7 +50,7 @@ export function AuthProvider({ children }) {
             try {
                 const data = await authApi.refresh(refreshTokenRef.current);
                 persist(data.user, data.token, data.refreshToken);
-            } catch (error) {
+            } catch {
                 logout();
             }
         };

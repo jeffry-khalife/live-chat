@@ -357,7 +357,7 @@ function HomePage() {
             } else {
                 alert(data.message || 'Erreur lors de la création du serveur.');
             }
-        } catch (err) {
+        } catch {
             alert('Erreur réseau lors de la création du serveur.');
         } finally {
             setCreating(false);
