@@ -352,11 +352,15 @@ function HomePage() {
                 setActiveChannel(getDefaultChannel(data.server));
                 setMessages([]);
                 setUnreadCounts((prev) => ({ ...prev, [data.server.id]: 0 }));
+                setShowModal(false);
+                setNewName('');
+            } else {
+                alert(data.message || 'Erreur lors de la création du serveur.');
             }
+        } catch (err) {
+            alert('Erreur réseau lors de la création du serveur.');
         } finally {
             setCreating(false);
-            setShowModal(false);
-            setNewName('');
         }
     }
 

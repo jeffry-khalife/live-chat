@@ -1,12 +1,11 @@
 const express = require('express');
 const prisma = require('../config/sql.js');
 const auth = require('../middlewares/auth.js');
-const requireAdmin = require('../middlewares/requireAdmin.js');
 
 const router = express.Router({ mergeParams: true });
 
-// Ajouter un membre à un serveur (admin uniquement)
-router.post('/', auth, requireAdmin, async (req, res) => {
+// Ajouter un membre à un serveur
+router.post('/', auth, async (req, res) => {
 	const serverId = parseInt(req.params.serverId);
 	const { pseudo } = req.body;
 

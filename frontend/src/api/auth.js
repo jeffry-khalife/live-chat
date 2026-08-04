@@ -21,3 +21,7 @@ export function login(email, password) {
 export function register(pseudo, email, password) {
     return request('/register', { pseudo, email, password });
 }
+
+export function refresh(refreshToken) {
+    return request('/refresh', { refreshToken });
+}

@@ -1,5 +1,83 @@
+import { useEffect, useRef } from 'react';
+import { useCall } from '../context/CallContext.jsx';
+
+function VideoTile({ stream, muted, label, isSelf }) {
+    const videoRef = useRef(null);
+
+    useEffect(() => {
+        if (videoRef.current) {
+            videoRef.current.srcObject = stream ?? null;
+        }
+    }, [stream]);
+
+    return (
+        <div className={`call-tile${isSelf ? ' call-tile-self' : ''}`}>
+            <video ref={videoRef} autoPlay playsInline muted={muted} />
+            <div className="call-tile-label">{label}</div>
+        </div>
+    );
+}
+
 function CallPanel() {
-    return <section>CallPanel</section>;
+    const {
+        callState,
+        remoteUser,
+        incomingCall,
+        localStream,
+        remoteStream,
+        micOn,
+        cameraOn,
+        error,
+        acceptCall,
+        declineCall,
+        hangUp,
+        toggleMic,
+        toggleCamera,
+    } = useCall();
+
+    if (callState === 'idle') {
+        return error ? (
+            <div className="call-toast">{error}</div>
+        ) : null;
+    }
+
+    if (callState === 'incoming' && incomingCall) {
+        return (
+            <div className="modal-overlay">
+                <div className="modal-box call-incoming-box">
+                    <h3>Appel entrant</h3>
+                    <p className="call-incoming-name">{incomingCall.fromUser.pseudo}</p>
+                    <div className="modal-actions">
+                        <button type="button" className="modal-cancel" onClick={declineCall}>Refuser</button>
+                        <button type="button" className="modal-confirm" onClick={acceptCall}>Accepter</button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="call-panel">
+            <div className="call-panel-header">
+                {callState === 'outgoing' ? `Appel de ${remoteUser?.pseudo}...` : remoteUser?.pseudo}
+            </div>
+            <div className="call-panel-grid">
+                <VideoTile stream={remoteStream} label={remoteUser?.pseudo ?? ''} />
+                <VideoTile stream={localStream} muted isSelf label="Moi" />
+            </div>
+            <div className="call-panel-controls">
+                <button type="button" className={`call-control-btn${micOn ? '' : ' call-control-off'}`} onClick={toggleMic} title="Micro">
+                    {micOn ? '🎙️' : '🔇'}
+                </button>
+                <button type="button" className={`call-control-btn${cameraOn ? '' : ' call-control-off'}`} onClick={toggleCamera} title="Caméra">
+                    {cameraOn ? '📷' : '📷🚫'}
+                </button>
+                <button type="button" className="call-control-btn call-control-hangup" onClick={hangUp} title="Raccrocher">
+                    📞
+                </button>
+            </div>
+        </div>
+    );
 }
 
 export default CallPanel;

@@ -2,7 +2,6 @@ const express = require('express');
 
 const prisma = require('../config/sql.js');
 const auth = require('../middlewares/auth.js');
-const requireAdmin = require('../middlewares/requireAdmin.js');
 
 const router = express.Router();
 
@@ -32,8 +31,8 @@ router.get('/', auth, async (req, res) => {
 	}
 });
 
-// Créer un serveur (admin uniquement) — crée un salon #général par défaut
-router.post('/', auth, requireAdmin, async (req, res) => {
+// Créer un serveur — le créateur en devient l'admin (rôle dans server_members) — crée un salon #général par défaut
+router.post('/', auth, async (req, res) => {
 	const { name, icon_url } = req.body;
 
 	if (!name?.trim()) {
@@ -63,7 +62,7 @@ router.post('/', auth, requireAdmin, async (req, res) => {
 });
 
 // Ajouter un salon à un serveur (admin uniquement)
-router.post('/:id/channels', auth, requireAdmin, async (req, res) => {
+router.post('/:id/channels', auth, async (req, res) => {
 	const serverId = parseInt(req.params.id);
 	const { name, type } = req.body;
 
@@ -146,7 +145,7 @@ router.delete('/:serverId/channels/:channelId', auth, async (req, res) => {
 });
 
 // Supprimer un serveur (admin uniquement)
-router.delete('/:id', auth, requireAdmin, async (req, res) => {
+router.delete('/:id', auth, async (req, res) => {
 	const serverId = parseInt(req.params.id);
 
 	try {
