@@ -53,7 +53,11 @@ async function getRecentMessages(channelId) {
     const cacheKey = `messages:channel:${channelId}:recent`;
     const cached = await client.get(cacheKey);
 
-    return cached ? JSON.parse(cached) : null;
+    if (!cached) {
+        return null;
+    }
+
+    return JSON.parse(cached);
 }
 
 async function setRecentMessages(channelId, messages) {
