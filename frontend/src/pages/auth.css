@@ -1,31 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap');
-
-:root {
-    --bg-page: #0B1120;
-    --bg-card: #1c2333;
-    --bg-input: #ffffff;
-
-    --text-primary: #f8fafc;
-    --text-secondary: #cbd5e1;
-    --text-muted: #e2e8f0;
-    --text-input: #1e293b;
-    --text-btn: #0a0e1a;
-
-    --accent: #4fd1e8;
-    --accent-hover: #3ec6df;
-    --register: #8b9cf4;
-    --register-hover: #7c8ef2;
-    --error: #fca5a5;
-
-    --glow: 0 0 0 1px rgba(93, 216, 245, 0.35), 0 0 45px rgba(56, 189, 248, 0.35);
-
-    --font: 'Poppins', sans-serif;
-
-    --radius-card: 28px;
-    --radius-input: 20px;
-    --radius-btn: 100px;
-}
-
 body {
     margin: 0;
     padding: 0;
@@ -142,11 +114,11 @@ body {
 }
 
 .auth-btn-register {
-    background: var(--register);
+    background: var(--accent-secondary);
 }
 
 .auth-btn-register:hover {
-    background: var(--register-hover);
+    background: var(--accent-secondary-hover);
 }
 
 .auth-btn-login {
