@@ -25,6 +25,10 @@ function makeCallId() {
     return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function log(...args) {
+    console.log('[WebRTC]', ...args);
+}
+
 export function CallProvider({ children }) {
     const { user } = useAuth();
     const socket = useSocket();
@@ -68,6 +72,7 @@ export function CallProvider({ children }) {
     }, []);
 
     const cleanup = useCallback(() => {
+        log('Call ended');
         for (const pc of pcsRef.current.values()) pc.close();
         pcsRef.current.clear();
         pendingCandidatesRef.current.clear();
@@ -83,29 +88,45 @@ export function CallProvider({ children }) {
     }, [updateCallState]);
 
     const createPeerConnection = useCallback((remoteUserId, callId, stream) => {
+        log('Creating peer connection', { remoteUserId, callId });
         const pc = new RTCPeerConnection(ICE_SERVERS);
 
         pc.onicecandidate = (event) => {
             if (event.candidate) {
+                log('ICE candidate', { remoteUserId });
                 socket.emit('webrtc:ice-candidate', { toUserId: remoteUserId, callId, candidate: event.candidate });
             }
         };
 
         pc.ontrack = (event) => {
+            log('Remote stream received', { remoteUserId });
             upsertParticipant(remoteUserId, { stream: event.streams[0] });
+        };
+
+        pc.onconnectionstatechange = () => {
+            log('Call connected state changed', { remoteUserId, state: pc.connectionState });
+            if (pc.connectionState === 'connected') {
+                log('Call connected', { remoteUserId });
+            }
+            if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+                setError('La connexion avec un participant a été perdue.');
+                removeParticipant(remoteUserId);
+            }
         };
 
         stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
         pcsRef.current.set(remoteUserId, pc);
         return pc;
-    }, [socket, upsertParticipant]);
+    }, [socket, upsertParticipant, removeParticipant]);
 
     const connectToParticipant = useCallback(async (remoteUserId, callId, stream) => {
         const pc = createPeerConnection(remoteUserId, callId, stream);
         try {
+            log('Creating offer', { remoteUserId });
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
+            log('Sending offer', { remoteUserId });
             socket.emit('webrtc:offer', { toUserId: remoteUserId, callId, sdp: offer });
         } catch {
             removeParticipant(remoteUserId);
@@ -212,6 +233,32 @@ export function CallProvider({ children }) {
     }, []);
 
     useEffect(() => {
+        function handleBeforeUnload() {
+            if (callStateRef.current !== 'idle') {
+                hangUp();
+            }
+        }
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, [hangUp]);
+
+    useEffect(() => {
+        if (!socket) return undefined;
+
+        function onDisconnect() {
+            if (callStateRef.current !== 'idle') {
+                log('Socket disconnected during call');
+                setError('Connexion perdue.');
+                cleanup();
+            }
+        }
+
+        socket.on('disconnect', onDisconnect);
+        return () => socket.off('disconnect', onDisconnect);
+    }, [socket, cleanup]);
+
+    useEffect(() => {
         if (!socket) return undefined;
 
         function onIncoming(payload) {
@@ -287,6 +334,7 @@ export function CallProvider({ children }) {
             const pc = pcsRef.current.get(fromUserId);
             if (!pc || callId !== callIdRef.current) return;
             try {
+                log('Receiving answer', { fromUserId });
                 await pc.setRemoteDescription(new RTCSessionDescription(sdp));
                 const pending = pendingCandidatesRef.current.get(fromUserId) || [];
                 for (const candidate of pending) {
