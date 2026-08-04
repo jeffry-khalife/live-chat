@@ -4,7 +4,22 @@ import { useSocket } from './SocketContext.jsx';
 
 const CallContext = createContext(null);
 
-const ICE_SERVERS = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+function buildIceServers() {
+    const iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
+
+    const turnUrl = import.meta.env.VITE_TURN_URL;
+    if (turnUrl) {
+        iceServers.push({
+            urls: turnUrl,
+            username: import.meta.env.VITE_TURN_USERNAME,
+            credential: import.meta.env.VITE_TURN_CREDENTIAL,
+        });
+    }
+
+    return { iceServers };
+}
+
+const ICE_SERVERS = buildIceServers();
 
 function makeCallId() {
     return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
