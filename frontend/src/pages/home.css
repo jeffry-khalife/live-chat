@@ -945,6 +945,7 @@
 
 .online-user-call-btn:hover:not(:disabled) { background: rgba(79, 209, 232, 0.25); }
 .online-user-call-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.online-user-call-btn svg { width: 14px; height: 14px; color: #4fd1e8; }
 
 .call-toast {
     position: fixed;
@@ -1055,6 +1056,7 @@
 }
 
 .call-control-btn:hover { background: rgba(148, 163, 184, 0.3); }
+.call-control-btn svg { width: 18px; height: 18px; }
 .call-control-off { background: rgba(239, 68, 68, 0.25); }
 .call-control-hangup { background: #ef4444; }
 .call-control-hangup:hover { background: #dc2626; }
