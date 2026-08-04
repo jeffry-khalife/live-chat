@@ -15,59 +15,87 @@ export function CallProvider({ children }) {
     const socket = useSocket();
 
     const [callState, setCallState] = useState('idle'); // idle | outgoing | incoming | in-call
-    const [remoteUser, setRemoteUser] = useState(null);
     const [incomingCall, setIncomingCall] = useState(null);
     const [localStream, setLocalStream] = useState(null);
-    const [remoteStream, setRemoteStream] = useState(null);
+    const [participants, setParticipants] = useState([]); // [{ userId, pseudo, stream }]
     const [micOn, setMicOn] = useState(true);
     const [cameraOn, setCameraOn] = useState(true);
     const [error, setError] = useState(null);
 
     const callStateRef = useRef('idle');
-    const pcRef = useRef(null);
+    const pcsRef = useRef(new Map()); // userId -> RTCPeerConnection
     const localStreamRef = useRef(null);
     const callIdRef = useRef(null);
-    const remoteUserIdRef = useRef(null);
-    const pendingCandidatesRef = useRef([]);
+    const pendingCandidatesRef = useRef(new Map()); // userId -> candidate[]
 
     const updateCallState = useCallback((next) => {
         callStateRef.current = next;
         setCallState(next);
     }, []);
 
+    const upsertParticipant = useCallback((userId, patch) => {
+        setParticipants((current) => {
+            const idx = current.findIndex((p) => p.userId === userId);
+            if (idx === -1) {
+                return [...current, { userId, pseudo: '', stream: null, ...patch }];
+            }
+            const next = [...current];
+            next[idx] = { ...next[idx], ...patch };
+            return next;
+        });
+    }, []);
+
+    const removeParticipant = useCallback((userId) => {
+        pcsRef.current.get(userId)?.close();
+        pcsRef.current.delete(userId);
+        pendingCandidatesRef.current.delete(userId);
+        setParticipants((current) => current.filter((p) => p.userId !== userId));
+    }, []);
+
     const cleanup = useCallback(() => {
-        pcRef.current?.close();
-        pcRef.current = null;
+        for (const pc of pcsRef.current.values()) pc.close();
+        pcsRef.current.clear();
+        pendingCandidatesRef.current.clear();
         localStreamRef.current?.getTracks().forEach((track) => track.stop());
         localStreamRef.current = null;
         setLocalStream(null);
-        setRemoteStream(null);
-        setRemoteUser(null);
+        setParticipants([]);
         setIncomingCall(null);
         callIdRef.current = null;
-        remoteUserIdRef.current = null;
-        pendingCandidatesRef.current = [];
         setMicOn(true);
         setCameraOn(true);
         updateCallState('idle');
     }, [updateCallState]);
 
-    const createPeerConnection = useCallback((targetUserId, callId) => {
+    const createPeerConnection = useCallback((remoteUserId, callId, stream) => {
         const pc = new RTCPeerConnection(ICE_SERVERS);
 
         pc.onicecandidate = (event) => {
             if (event.candidate) {
-                socket.emit('webrtc:ice-candidate', { toUserId: targetUserId, callId, candidate: event.candidate });
+                socket.emit('webrtc:ice-candidate', { toUserId: remoteUserId, callId, candidate: event.candidate });
             }
         };
 
         pc.ontrack = (event) => {
-            setRemoteStream(event.streams[0]);
+            upsertParticipant(remoteUserId, { stream: event.streams[0] });
         };
 
-        pcRef.current = pc;
+        stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+
+        pcsRef.current.set(remoteUserId, pc);
         return pc;
-    }, [socket]);
+    }, [socket, upsertParticipant]);
+
+    const connectToParticipant = useCallback(async (remoteUserId, callId, stream) => {
+        const pc = createPeerConnection(remoteUserId, callId, stream);
+        try {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            socket.emit('webrtc:offer', { toUserId: remoteUserId, callId, sdp: offer });
+        } catch {
+            removeParticipant(remoteUserId);
+        }
+    }, [createPeerConnection, socket, removeParticipant]);
 
     const getLocalMedia = useCallback(async (video) => {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video });
@@ -77,8 +105,8 @@ export function CallProvider({ children }) {
     }, []);
 
     const hangUp = useCallback(() => {
-        if (socket && remoteUserIdRef.current && callIdRef.current) {
-            socket.emit('call:hangup', { toUserId: remoteUserIdRef.current, callId: callIdRef.current });
+        if (socket && callIdRef.current) {
+            socket.emit('call:hangup', { callId: callIdRef.current });
         }
         cleanup();
     }, [socket, cleanup]);
@@ -88,17 +116,13 @@ export function CallProvider({ children }) {
 
         const callId = makeCallId();
         callIdRef.current = callId;
-        remoteUserIdRef.current = targetUser.id;
-        setRemoteUser(targetUser);
         setCameraOn(video);
         updateCallState('outgoing');
         setError(null);
+        upsertParticipant(targetUser.id, { pseudo: targetUser.pseudo });
 
         try {
-            const stream = await getLocalMedia(video);
-            const pc = createPeerConnection(targetUser.id, callId);
-            stream.getTracks().forEach((track) => pc.addTrack(track, stream));
-
+            await getLocalMedia(video);
             socket.emit('call:invite', {
                 toUserId: targetUser.id,
                 callId,
@@ -109,31 +133,42 @@ export function CallProvider({ children }) {
             setError('Impossible d\'accéder à la caméra/micro.');
             cleanup();
         }
-    }, [socket, user, getLocalMedia, createPeerConnection, cleanup, updateCallState]);
+    }, [socket, user, getLocalMedia, upsertParticipant, cleanup, updateCallState]);
+
+    const inviteToCall = useCallback((targetUser) => {
+        if (!socket || callStateRef.current !== 'in-call' || !callIdRef.current) return;
+        if (targetUser.id === user?.id) return;
+        if (participants.some((p) => p.userId === targetUser.id)) return;
+
+        socket.emit('call:invite-more', {
+            toUserId: targetUser.id,
+            callId: callIdRef.current,
+            video: cameraOn,
+            fromUser: { id: user.id, pseudo: user.pseudo },
+        });
+    }, [socket, user, cameraOn, participants]);
 
     const acceptCall = useCallback(async () => {
         if (!incomingCall || !socket) return;
 
-        const { callId, fromUser, video } = incomingCall;
+        const { callId, video, participants: existingParticipants } = incomingCall;
         callIdRef.current = callId;
-        remoteUserIdRef.current = fromUser.id;
-        setRemoteUser(fromUser);
         setCameraOn(video);
         setIncomingCall(null);
         updateCallState('in-call');
         setError(null);
 
+        existingParticipants.forEach((p) => upsertParticipant(p.id, { pseudo: p.pseudo }));
+
         try {
             const stream = await getLocalMedia(video);
-            const pc = createPeerConnection(fromUser.id, callId);
-            stream.getTracks().forEach((track) => pc.addTrack(track, stream));
-
-            socket.emit('call:accept', { toUserId: fromUser.id, callId });
+            socket.emit('call:accept', { callId, fromUser: { id: user.id, pseudo: user.pseudo } });
+            existingParticipants.forEach((p) => connectToParticipant(p.id, callId, stream));
         } catch {
             setError('Impossible d\'accéder à la caméra/micro.');
             hangUp();
         }
-    }, [incomingCall, socket, getLocalMedia, createPeerConnection, hangUp, updateCallState]);
+    }, [incomingCall, socket, user, getLocalMedia, connectToParticipant, upsertParticipant, hangUp, updateCallState]);
 
     const declineCall = useCallback(() => {
         if (!incomingCall || !socket) return;
@@ -164,31 +199,25 @@ export function CallProvider({ children }) {
         if (!socket) return undefined;
 
         function onIncoming(payload) {
-            if (callStateRef.current !== 'idle') {
-                socket.emit('call:decline', { toUserId: payload.fromUser.id, callId: payload.callId });
+            if (callStateRef.current === 'idle') {
+                setIncomingCall(payload);
+                updateCallState('incoming');
                 return;
             }
-            setIncomingCall(payload);
-            updateCallState('incoming');
-        }
 
-        async function onAccepted({ fromUserId, callId }) {
-            if (callId !== callIdRef.current || !pcRef.current) return;
-            try {
-                const pc = pcRef.current;
-                const offer = await pc.createOffer();
-                await pc.setLocalDescription(offer);
-                socket.emit('webrtc:offer', { toUserId: fromUserId, callId, sdp: offer });
-                updateCallState('in-call');
-            } catch {
-                setError('Erreur lors de l\'établissement de l\'appel.');
-                hangUp();
+            if (callStateRef.current === 'in-call' && payload.callId === callIdRef.current) {
+                // We're already in this call (invite-more targeted someone else) — ignore.
+                return;
             }
+
+            socket.emit('call:decline', { toUserId: payload.fromUser.id, callId: payload.callId });
         }
 
         function onDeclined() {
             setError('Appel refusé.');
-            cleanup();
+            if (callStateRef.current !== 'in-call') {
+                cleanup();
+            }
         }
 
         function onHangup({ callId }) {
@@ -199,48 +228,69 @@ export function CallProvider({ children }) {
 
         function onUnavailable() {
             setError('Utilisateur injoignable.');
-            cleanup();
+            if (callStateRef.current !== 'in-call') {
+                cleanup();
+            }
+        }
+
+        function onParticipantJoined({ callId, user: joinedUser }) {
+            if (callId !== callIdRef.current) return;
+            upsertParticipant(joinedUser.id, { pseudo: joinedUser.pseudo });
+            updateCallState('in-call');
+        }
+
+        function onParticipantLeft({ callId, userId: leftUserId }) {
+            if (callId !== callIdRef.current) return;
+            removeParticipant(leftUserId);
         }
 
         async function onOffer({ fromUserId, callId, sdp }) {
-            const pc = pcRef.current;
-            if (!pc || callId !== callIdRef.current || fromUserId !== remoteUserIdRef.current) return;
+            if (callId !== callIdRef.current || !localStreamRef.current) return;
             try {
+                let pc = pcsRef.current.get(fromUserId);
+                if (!pc) {
+                    pc = createPeerConnection(fromUserId, callId, localStreamRef.current);
+                }
                 await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-                for (const candidate of pendingCandidatesRef.current) {
+                const pending = pendingCandidatesRef.current.get(fromUserId) || [];
+                for (const candidate of pending) {
                     await pc.addIceCandidate(new RTCIceCandidate(candidate));
                 }
-                pendingCandidatesRef.current = [];
+                pendingCandidatesRef.current.delete(fromUserId);
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
                 socket.emit('webrtc:answer', { toUserId: fromUserId, callId, sdp: answer });
+                updateCallState('in-call');
             } catch {
                 setError('Erreur lors de l\'établissement de l\'appel.');
             }
         }
 
         async function onAnswer({ fromUserId, callId, sdp }) {
-            const pc = pcRef.current;
-            if (!pc || callId !== callIdRef.current || fromUserId !== remoteUserIdRef.current) return;
+            const pc = pcsRef.current.get(fromUserId);
+            if (!pc || callId !== callIdRef.current) return;
             try {
                 await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-                for (const candidate of pendingCandidatesRef.current) {
+                const pending = pendingCandidatesRef.current.get(fromUserId) || [];
+                for (const candidate of pending) {
                     await pc.addIceCandidate(new RTCIceCandidate(candidate));
                 }
-                pendingCandidatesRef.current = [];
+                pendingCandidatesRef.current.delete(fromUserId);
             } catch {
                 setError('Erreur lors de l\'établissement de l\'appel.');
             }
         }
 
         async function onIceCandidate({ fromUserId, callId, candidate }) {
-            const pc = pcRef.current;
-            if (!pc || callId !== callIdRef.current || fromUserId !== remoteUserIdRef.current || !candidate) return;
+            if (callId !== callIdRef.current || !candidate) return;
+            const pc = pcsRef.current.get(fromUserId);
             try {
-                if (pc.remoteDescription) {
+                if (pc && pc.remoteDescription) {
                     await pc.addIceCandidate(new RTCIceCandidate(candidate));
                 } else {
-                    pendingCandidatesRef.current.push(candidate);
+                    const pending = pendingCandidatesRef.current.get(fromUserId) || [];
+                    pending.push(candidate);
+                    pendingCandidatesRef.current.set(fromUserId, pending);
                 }
             } catch {
                 // ignore malformed/late candidates
@@ -248,38 +298,40 @@ export function CallProvider({ children }) {
         }
 
         socket.on('call:incoming', onIncoming);
-        socket.on('call:accepted', onAccepted);
         socket.on('call:declined', onDeclined);
         socket.on('call:hangup', onHangup);
         socket.on('call:unavailable', onUnavailable);
+        socket.on('call:participant-joined', onParticipantJoined);
+        socket.on('call:participant-left', onParticipantLeft);
         socket.on('webrtc:offer', onOffer);
         socket.on('webrtc:answer', onAnswer);
         socket.on('webrtc:ice-candidate', onIceCandidate);
 
         return () => {
             socket.off('call:incoming', onIncoming);
-            socket.off('call:accepted', onAccepted);
             socket.off('call:declined', onDeclined);
             socket.off('call:hangup', onHangup);
             socket.off('call:unavailable', onUnavailable);
+            socket.off('call:participant-joined', onParticipantJoined);
+            socket.off('call:participant-left', onParticipantLeft);
             socket.off('webrtc:offer', onOffer);
             socket.off('webrtc:answer', onAnswer);
             socket.off('webrtc:ice-candidate', onIceCandidate);
         };
-    }, [socket, cleanup, hangUp, updateCallState]);
+    }, [socket, cleanup, createPeerConnection, upsertParticipant, removeParticipant, updateCallState]);
 
     return (
         <CallContext.Provider
             value={{
                 callState,
-                remoteUser,
                 incomingCall,
                 localStream,
-                remoteStream,
+                participants,
                 micOn,
                 cameraOn,
                 error,
                 startCall,
+                inviteToCall,
                 acceptCall,
                 declineCall,
                 hangUp,

@@ -21,10 +21,9 @@ function VideoTile({ stream, muted, label, isSelf }) {
 function CallPanel() {
     const {
         callState,
-        remoteUser,
         incomingCall,
         localStream,
-        remoteStream,
+        participants,
         micOn,
         cameraOn,
         error,
@@ -56,13 +55,17 @@ function CallPanel() {
         );
     }
 
+    const headerLabel = callState === 'outgoing'
+        ? `Appel de ${participants[0]?.pseudo ?? '...'}...`
+        : participants.map((p) => p.pseudo).filter(Boolean).join(', ');
+
     return (
         <div className="call-panel">
-            <div className="call-panel-header">
-                {callState === 'outgoing' ? `Appel de ${remoteUser?.pseudo}...` : remoteUser?.pseudo}
-            </div>
+            <div className="call-panel-header">{headerLabel}</div>
             <div className="call-panel-grid">
-                <VideoTile stream={remoteStream} label={remoteUser?.pseudo ?? ''} />
+                {participants.map((p) => (
+                    <VideoTile key={p.userId} stream={p.stream} label={p.pseudo} />
+                ))}
                 <VideoTile stream={localStream} muted isSelf label="Moi" />
             </div>
             <div className="call-panel-controls">
