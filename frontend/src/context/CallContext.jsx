@@ -161,14 +161,15 @@ export function CallProvider({ children }) {
         existingParticipants.forEach((p) => upsertParticipant(p.id, { pseudo: p.pseudo }));
 
         try {
-            const stream = await getLocalMedia(video);
+            await getLocalMedia(video);
+            // Each existing participant creates the offer to us once they learn we've joined
+            // (see onParticipantJoined) — we just need our media ready and wait for their offers.
             socket.emit('call:accept', { callId, fromUser: { id: user.id, pseudo: user.pseudo } });
-            existingParticipants.forEach((p) => connectToParticipant(p.id, callId, stream));
         } catch {
             setError('Impossible d\'accéder à la caméra/micro.');
             hangUp();
         }
-    }, [incomingCall, socket, user, getLocalMedia, connectToParticipant, upsertParticipant, hangUp, updateCallState]);
+    }, [incomingCall, socket, user, getLocalMedia, upsertParticipant, hangUp, updateCallState]);
 
     const declineCall = useCallback(() => {
         if (!incomingCall || !socket) return;
@@ -234,9 +235,10 @@ export function CallProvider({ children }) {
         }
 
         function onParticipantJoined({ callId, user: joinedUser }) {
-            if (callId !== callIdRef.current) return;
+            if (callId !== callIdRef.current || !localStreamRef.current) return;
             upsertParticipant(joinedUser.id, { pseudo: joinedUser.pseudo });
             updateCallState('in-call');
+            connectToParticipant(joinedUser.id, callId, localStreamRef.current);
         }
 
         function onParticipantLeft({ callId, userId: leftUserId }) {
@@ -318,7 +320,7 @@ export function CallProvider({ children }) {
             socket.off('webrtc:answer', onAnswer);
             socket.off('webrtc:ice-candidate', onIceCandidate);
         };
-    }, [socket, cleanup, createPeerConnection, upsertParticipant, removeParticipant, updateCallState]);
+    }, [socket, cleanup, createPeerConnection, connectToParticipant, upsertParticipant, removeParticipant, updateCallState]);
 
     return (
         <CallContext.Provider
