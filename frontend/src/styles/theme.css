@@ -1,0 +1,61 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap');
+
+:root {
+    /* Backgrounds */
+    --bg-page: #0B1120;
+    --bg-sidebar: #0d1321;
+    --bg-channels: #0f1623;
+    --bg-surface: #111827;
+    --bg-card: #1c2333;
+    --bg-elevated: #1c2740;
+    --bg-hover: #263355;
+    --bg-input: #ffffff;
+
+    /* Text */
+    --text-primary: #f8fafc;
+    --text-secondary: #cbd5e1;
+    --text-muted: #e2e8f0;
+    --text-subtle: #94a3b8;
+    --text-faint: #64748b;
+    --text-dim: #475569;
+    --text-disabled: #334155;
+    --text-input: #1e293b;
+    --text-btn: #0a0e1a;
+
+    /* Accent */
+    --accent: #4fd1e8;
+    --accent-hover: #3ec6df;
+    --accent-secondary: #8b9cf4;
+    --accent-secondary-hover: #7c8ef2;
+
+    /* Status */
+    --status-online: #34d399;
+    --status-away: #FFB547;
+    --status-dnd: #F54E4E;
+    --status-offline: #A8B3CF;
+
+    /* Semantic */
+    --error: #fca5a5;
+    --danger: #f87171;
+    --danger-strong: #ef4444;
+
+    /* Borders & shadows */
+    --border: #1c2740;
+    --overlay: rgba(11, 17, 32, 0.7);
+    --glow: 0 0 0 1px rgba(93, 216, 245, 0.35), 0 0 45px rgba(56, 189, 248, 0.35);
+    --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.5);
+
+    /* Typography & shape */
+    --font: 'Poppins', sans-serif;
+    --radius-card: 28px;
+    --radius-input: 20px;
+    --radius-btn: 100px;
+}
+
+/* Shared shell: a sticky Header on top, with the page's own layout filling the rest. */
+.page-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+}

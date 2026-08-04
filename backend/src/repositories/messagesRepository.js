@@ -30,9 +30,8 @@ function normalizeMessage(document) {
         return null;
     }
 
-    return {
+    const base = {
         id: document._id?.toString(),
-        channelId: Number(document.channelId),
         scope: document.scope,
         authorId: Number(document.authorId),
         content: document.content,
@@ -41,37 +40,45 @@ function normalizeMessage(document) {
         createdAt: document.createdAt,
         editedAt: document.editedAt ?? null,
     };
+
+    if (document.scope === 'dm') {
+        return { ...base, conversationId: Number(document.roomId) };
+    }
+
+    return { ...base, channelId: Number(document.roomId) };
 }
 
-async function getRecentMessages(channelId) {
+function cacheKey(scope, roomId) {
+    return `messages:${scope}:${roomId}:recent`;
+}
+
+async function getRecentMessages(scope, roomId) {
     const client = await getRedisClient();
 
     if (!client) {
         return null;
     }
 
-    const cacheKey = `messages:channel:${channelId}:recent`;
-    const cached = await client.get(cacheKey);
+    const cached = await client.get(cacheKey(scope, roomId));
 
     return cached ? JSON.parse(cached) : null;
 }
 
-async function setRecentMessages(channelId, messages) {
+async function setRecentMessages(scope, roomId, messages) {
     const client = await getRedisClient();
 
     if (!client) {
         return;
     }
 
-    const cacheKey = `messages:channel:${channelId}:recent`;
-    await client.set(cacheKey, JSON.stringify(messages.slice(-RECENT_MESSAGES_LIMIT)), { EX: 30 });
+    await client.set(cacheKey(scope, roomId), JSON.stringify(messages.slice(-RECENT_MESSAGES_LIMIT)), { EX: 30 });
 }
 
-async function findByChannelId(channelId, options = {}) {
+async function findByRoom(scope, roomId, options = {}) {
     const { limit = 50, before } = options;
 
     if (!before) {
-        const cached = await getRecentMessages(channelId);
+        const cached = await getRecentMessages(scope, roomId);
 
         if (cached) {
             return cached.slice(-limit);
@@ -80,8 +87,8 @@ async function findByChannelId(channelId, options = {}) {
 
     const db = await getDatabase();
     const query = {
-        channelId: String(channelId),
-        scope: 'channel',
+        roomId: String(roomId),
+        scope,
     };
 
     if (before) {
@@ -98,33 +105,33 @@ async function findByChannelId(channelId, options = {}) {
     const messages = documents.map(normalizeMessage);
 
     if (!before) {
-        await setRecentMessages(channelId, messages);
+        await setRecentMessages(scope, roomId, messages);
     }
 
     return messages;
 }
 
-async function create(message) {
+async function createMessage({ roomId, scope, authorId, content, attachments }) {
     const db = await getDatabase();
     const document = {
-        channelId: String(message.channelId),
-        scope: message.scope ?? 'channel',
-        authorId: String(message.authorId),
-        content: message.content,
-        attachments: Array.isArray(message.attachments) ? message.attachments : [],
-        reactions: Array.isArray(message.reactions) ? message.reactions : [],
-        createdAt: message.createdAt ?? new Date(),
-        editedAt: message.editedAt ?? null,
+        roomId: String(roomId),
+        scope,
+        authorId: String(authorId),
+        content,
+        attachments: Array.isArray(attachments) ? attachments : [],
+        reactions: [],
+        createdAt: new Date(),
+        editedAt: null,
     };
 
     const result = await db.collection('messages').insertOne(document);
     const createdMessage = normalizeMessage({ ...document, _id: result.insertedId });
 
     try {
-        const cached = await getRecentMessages(message.channelId);
+        const cached = await getRecentMessages(scope, roomId);
 
         if (cached) {
-            await setRecentMessages(message.channelId, [...cached, createdMessage]);
+            await setRecentMessages(scope, roomId, [...cached, createdMessage]);
         }
     } catch (error) {
     }
@@ -132,8 +139,26 @@ async function create(message) {
     return createdMessage;
 }
 
+async function findByChannelId(channelId, options = {}) {
+    return findByRoom('channel', channelId, options);
+}
+
+async function create({ channelId, scope, authorId, content, attachments }) {
+    return createMessage({ roomId: channelId, scope: scope ?? 'channel', authorId, content, attachments });
+}
+
+async function findByConversationId(conversationId, options = {}) {
+    return findByRoom('dm', conversationId, options);
+}
+
+async function createDmMessage({ conversationId, authorId, content, attachments }) {
+    return createMessage({ roomId: conversationId, scope: 'dm', authorId, content, attachments });
+}
+
 module.exports = {
     findByChannelId,
     create,
+    findByConversationId,
+    createDmMessage,
     normalizeMessage,
 };

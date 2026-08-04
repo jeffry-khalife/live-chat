@@ -1,6 +1,11 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useChatData } from '../context/ChatDataContext.jsx';
 import { updateProfile } from '../api/profile.js';
+import { getDefaultChannel } from '../utils/channels.js';
+import Sidebar from '../components/Sidebar.jsx';
+import Header from '../components/Header.jsx';
 import './profile.css';
 
 function PencilIcon() {
@@ -24,19 +29,19 @@ const STATUS_OPTIONS = [
     { value: 'online', label: 'En ligne' },
     { value: 'away', label: 'Absent' },
     { value: 'dnd', label: 'Ne pas déranger' },
-    { value: 'offline', label: 'Hors ligne' },
 ];
 
 function ProfilePage() {
     const { user, token, updateUser } = useAuth();
+    const navigate = useNavigate();
+    const { servers, conversations, serverError, myStatus, setMyStatus, statuses } = useChatData();
     const initial = (user?.pseudo?.[0] || '?').toUpperCase();
 
     const [saving, setSaving] = useState(false);
-    const [status, setStatus] = useState('online');
     const [showStatusMenu, setShowStatusMenu] = useState(false);
 
     function selectStatus(value) {
-        setStatus(value);
+        setMyStatus(value);
         setShowStatusMenu(false);
     }
 
@@ -111,15 +116,33 @@ function ProfilePage() {
     }
 
     return (
-        <>
+        <div className="page-shell">
+        <Header />
+        <div className="profile-page-layout">
+        <Sidebar
+            servers={servers}
+            conversations={conversations}
+            selected={null}
+            selectedConversation={null}
+            unreadByServer={{}}
+            dmUnreadCounts={{}}
+            serverError={serverError}
+            statuses={statuses}
+            onSelectServer={(server) => navigate('/', { state: { openServerId: server.id } })}
+            onSelectConversation={(conversation) => navigate('/', { state: { openConversationId: conversation.id } })}
+            onCreateServer={() => navigate('/', { state: { openNewServerModal: true } })}
+            onCreateDm={() => navigate('/', { state: { openNewDmModal: true } })}
+            getDefaultChannel={getDefaultChannel}
+        />
         <main className="profile-main">
+            <div className="profile-content">
             <div className="profile-avatar-wrap">
                 <button
                     type="button"
                     className="profile-avatar-trigger"
                     onClick={() => setShowStatusMenu((v) => !v)}
                 >
-                    <Avatar letter={initial} size="lg" status={status} />
+                    <Avatar letter={initial} size="lg" status={myStatus} />
                 </button>
 
                 {showStatusMenu && (
@@ -181,6 +204,7 @@ function ProfilePage() {
                     </span>
                 </label>
             </form>
+            </div>
         </main>
 
         {showUsernameModal && (
@@ -285,7 +309,8 @@ function ProfilePage() {
                 </div>
             </div>
         )}
-        </>
+        </div>
+        </div>
     );
 }
 

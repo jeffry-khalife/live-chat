@@ -1,30 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useChatData } from '../context/ChatDataContext.jsx';
 import OnlineUsers from '../components/OnlineUsers.jsx';
+import Sidebar from '../components/Sidebar.jsx';
+import Header from '../components/Header.jsx';
+import Avatar from '../components/Avatar.jsx';
 import useSocket from '../hooks/useSocket.js';
+import { getDefaultChannel, mergeChannels, removeChannel } from '../utils/channels.js';
 import './home.css';
-
-const AVATAR_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ef4444', '#14b8a6'];
-
-function avatarColor(name = '') {
-    return AVATAR_COLORS[(name.charCodeAt(0) || 0) % AVATAR_COLORS.length];
-}
-
-function Avatar({ name = '?', size, style = {} }) {
-    return (
-        <div
-            className="conv-avatar"
-            style={{ background: avatarColor(name), width: size, height: size, fontSize: size ? size * 0.38 : undefined, ...style }}
-        >
-            {name[0]?.toUpperCase()}
-        </div>
-    );
-}
-
-function getDefaultChannel(server) {
-    return server.channels.find((channel) => channel.type === 'text') ?? server.channels[0] ?? null;
-}
 
 function formatMessageTime(value) {
     return new Date(value).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
@@ -69,27 +53,6 @@ function flattenUnreadCounts(servers, unreadCounts) {
     }, {});
 }
 
-function mergeChannels(existingChannels = [], incomingChannel) {
-    const nextChannels = Array.isArray(incomingChannel) ? incomingChannel : [incomingChannel];
-    const merged = [];
-    const seenIds = new Set();
-
-    for (const channel of [...existingChannels, ...nextChannels]) {
-        if (!channel || seenIds.has(channel.id)) {
-            continue;
-        }
-
-        seenIds.add(channel.id);
-        merged.push(channel);
-    }
-
-    return merged;
-}
-
-function removeChannel(existingChannels = [], channelId) {
-    return existingChannels.filter((channel) => Number(channel.id) !== Number(channelId));
-}
-
 function pickFallbackChannel(channels = [], removedChannelId) {
     return channels.find((channel) => Number(channel.id) !== Number(removedChannelId) && channel.type === 'text')
         ?? channels.find((channel) => Number(channel.id) !== Number(removedChannelId))
@@ -97,10 +60,11 @@ function pickFallbackChannel(channels = [], removedChannelId) {
 }
 
 function HomePage() {
-    const { user, token, logout } = useAuth();
+    const { user, token } = useAuth();
     const navigate = useNavigate();
+    const location = useLocation();
     const socket = useSocket();
-    const [servers, setServers] = useState([]);
+    const { servers, setServers, conversations, setConversations, serverError, statuses } = useChatData();
     const [selected, setSelected] = useState(null); // server object
     const [messages, setMessages] = useState([]);
     const [draft, setDraft] = useState('');
@@ -117,31 +81,22 @@ function HomePage() {
     const [loadingMessages, setLoadingMessages] = useState(false);
     const [unreadCounts, setUnreadCounts] = useState({});
     const [typingUsers, setTypingUsers] = useState([]);
-    const [serverError, setServerError] = useState('');
     const [onlineUsersByServer, setOnlineUsersByServer] = useState({});
+    const [selectedConversation, setSelectedConversation] = useState(null);
+    const [dmMessages, setDmMessages] = useState([]);
+    const [dmUnreadCounts, setDmUnreadCounts] = useState({});
+    const [loadingDmMessages, setLoadingDmMessages] = useState(false);
+    const [showNewDmModal, setShowNewDmModal] = useState(false);
+    const [newDmPseudo, setNewDmPseudo] = useState('');
+    const [creatingDm, setCreatingDm] = useState(false);
+    const [dmError, setDmError] = useState('');
+    const [dmSuggestions, setDmSuggestions] = useState([]);
     const messagesEndRef = useRef(null);
     const typingTimeoutRef = useRef(null);
+    const dmSearchTimeoutRef = useRef(null);
     const selectedId = selected?.id;
     const activeChannelId = activeChannel?.id;
-
-    useEffect(() => {
-        if (!token) return;
-        setServerError('');
-        fetch('/api/servers', { headers: { Authorization: `Bearer ${token}` } })
-            .then(async (r) => {
-                const data = await r.json().catch(() => ({}));
-                if (!r.ok) {
-                    throw new Error(data.message || 'Impossible de charger les serveurs.');
-                }
-
-                return data;
-            })
-            .then((data) => setServers(data.servers ?? []))
-            .catch((error) => {
-                setServers([]);
-                setServerError(error.message || 'Le serveur est indisponible.');
-            });
-    }, [token]);
+    const selectedConversationId = selectedConversation?.id;
 
     useEffect(() => {
         if (selected || servers.length === 0) {
@@ -155,7 +110,7 @@ function HomePage() {
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages]);
+    }, [messages, dmMessages]);
 
     useEffect(() => {
         if (!selectedId || !activeChannelId) {
@@ -204,6 +159,97 @@ function HomePage() {
             cancelled = true;
         };
     }, [activeChannelId, selectedId, token]);
+
+    useEffect(() => {
+        if (!selectedConversationId) {
+            setDmMessages([]);
+            return undefined;
+        }
+
+        let cancelled = false;
+        setLoadingDmMessages(true);
+        setDmUnreadCounts((currentCounts) => ({ ...currentCounts, [selectedConversationId]: 0 }));
+
+        fetch(`/api/conversations/${selectedConversationId}/messages?limit=100`, {
+            headers: { Authorization: `Bearer ${token}` },
+        })
+            .then(async (response) => {
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(data.message || 'Impossible de charger les messages.');
+                }
+                return data;
+            })
+            .then((data) => {
+                if (!cancelled) {
+                    setDmMessages(data.messages ?? []);
+                }
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setDmMessages([]);
+                }
+            })
+            .finally(() => {
+                if (!cancelled) {
+                    setLoadingDmMessages(false);
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [selectedConversationId, token]);
+
+    useEffect(() => {
+        if (!showNewDmModal || !token) {
+            return undefined;
+        }
+
+        clearTimeout(dmSearchTimeoutRef.current);
+        dmSearchTimeoutRef.current = setTimeout(() => {
+            fetch(`/api/users/search?q=${encodeURIComponent(newDmPseudo.trim())}`, {
+                headers: { Authorization: `Bearer ${token}` },
+            })
+                .then((r) => r.json())
+                .then((data) => setDmSuggestions(data.users ?? []))
+                .catch(() => setDmSuggestions([]));
+        }, 200);
+
+        return () => clearTimeout(dmSearchTimeoutRef.current);
+    }, [showNewDmModal, newDmPseudo, token]);
+
+    useEffect(() => {
+        if (!socket || !selectedConversationId) {
+            return undefined;
+        }
+
+        socket.emit('dm:join', { conversationId: selectedConversationId });
+    }, [socket, selectedConversationId]);
+
+    useEffect(() => {
+        if (!socket || !user?.id) {
+            return undefined;
+        }
+
+        const handleDmMessage = ({ conversationId, message }) => {
+            if (Number(conversationId) === Number(selectedConversationId)) {
+                setDmMessages((currentMessages) => [...currentMessages, message]);
+                return;
+            }
+
+            setDmUnreadCounts((currentCounts) => ({
+                ...currentCounts,
+                [conversationId]: (currentCounts[conversationId] ?? 0) + 1,
+            }));
+        };
+
+        socket.on('dm:message', handleDmMessage);
+
+        return () => {
+            socket.off('dm:message', handleDmMessage);
+        };
+    }, [socket, user?.id, selectedConversationId]);
 
     useEffect(() => {
         if (!socket || !selectedId || !activeChannelId) {
@@ -261,12 +307,6 @@ function HomePage() {
         socket.on('chat:notification', handleNotification);
         socket.on('chat:typing', handleTyping);
         socket.on('server:channel-created', ({ serverId, channel }) => {
-            setServers((currentServers) => currentServers.map((server) => (
-                Number(server.id) === Number(serverId)
-                    ? { ...server, channels: mergeChannels(server.channels, channel) }
-                    : server
-            )));
-
             if (Number(selectedId) === Number(serverId)) {
                 setSelected((currentSelected) => (
                     currentSelected && Number(currentSelected.id) === Number(serverId)
@@ -276,15 +316,6 @@ function HomePage() {
             }
         });
         socket.on('server:channel-deleted', ({ serverId, channelId }) => {
-            setServers((currentServers) => currentServers.map((server) => {
-                if (Number(server.id) !== Number(serverId)) {
-                    return server;
-                }
-
-                const nextChannels = removeChannel(server.channels, channelId);
-                return { ...server, channels: nextChannels };
-            }));
-
             setSelected((currentSelected) => {
                 if (!currentSelected || Number(currentSelected.id) !== Number(serverId)) {
                     return currentSelected;
@@ -348,6 +379,7 @@ function HomePage() {
             const data = await res.json();
             if (res.ok) {
                 setServers((prev) => [...prev, data.server]);
+                setSelectedConversation(null);
                 setSelected(data.server);
                 setActiveChannel(getDefaultChannel(data.server));
                 setMessages([]);
@@ -357,6 +389,100 @@ function HomePage() {
             setCreating(false);
             setShowModal(false);
             setNewName('');
+        }
+    }
+
+    function selectServer(server) {
+        setSelectedConversation(null);
+        setSelected(server);
+        setActiveChannel(getDefaultChannel(server));
+        setMessages([]);
+        setTypingUsers([]);
+        setUnreadCounts((currentCounts) => ({
+            ...currentCounts,
+            ...server.channels.reduce((accumulator, channel) => {
+                accumulator[channel.id] = 0;
+                return accumulator;
+            }, {}),
+        }));
+    }
+
+    function selectConversation(conversation) {
+        setSelected(null);
+        setActiveChannel(null);
+        setMessages([]);
+        setTypingUsers([]);
+        setSelectedConversation(conversation);
+    }
+
+    useEffect(() => {
+        const state = location.state;
+        if (!state) return;
+
+        if (state.openServerId) {
+            const server = servers.find((s) => Number(s.id) === Number(state.openServerId));
+            if (server) {
+                selectServer(server);
+                navigate(location.pathname, { replace: true, state: {} });
+            }
+            return;
+        }
+
+        if (state.openConversationId) {
+            const conversation = conversations.find((c) => Number(c.id) === Number(state.openConversationId));
+            if (conversation) {
+                selectConversation(conversation);
+                navigate(location.pathname, { replace: true, state: {} });
+            }
+            return;
+        }
+
+        if (state.openNewServerModal) {
+            setShowModal(true);
+            navigate(location.pathname, { replace: true, state: {} });
+            return;
+        }
+
+        if (state.openNewDmModal) {
+            setShowNewDmModal(true);
+            navigate(location.pathname, { replace: true, state: {} });
+        }
+    }, [location.state, servers, conversations]);
+
+    function closeNewDmModal() {
+        setShowNewDmModal(false);
+        setNewDmPseudo('');
+        setDmError('');
+        setDmSuggestions([]);
+    }
+
+    async function handleCreateConversation(e, pseudoOverride) {
+        e?.preventDefault();
+        const pseudo = (pseudoOverride ?? newDmPseudo).trim();
+        if (!pseudo || creatingDm) return;
+        setCreatingDm(true);
+        setDmError('');
+        try {
+            const res = await fetch('/api/conversations', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ pseudo }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setDmError(data.message || 'Impossible de créer la conversation.');
+                return;
+            }
+            setConversations((currentConversations) => {
+                const exists = currentConversations.some((c) => c.id === data.conversation.id);
+                return exists ? currentConversations : [data.conversation, ...currentConversations];
+            });
+            selectConversation(data.conversation);
+            closeNewDmModal();
+        } catch {
+            setDmError('Impossible de créer la conversation.');
+        } finally {
+            setCreatingDm(false);
         }
     }
 
@@ -527,7 +653,51 @@ function HomePage() {
         typingTimeoutRef.current = setTimeout(() => updateTypingState(false), 1800);
     }
 
+    async function sendDmMessage(content) {
+        if (!selectedConversation) {
+            return null;
+        }
+
+        const conversationId = selectedConversation.id;
+
+        if (socket) {
+            return new Promise((resolve) => {
+                socket.emit('dm:message', {
+                    conversationId,
+                    content,
+                }, (response) => {
+                    if (response?.ok && response.message && Number(response.message.conversationId) === Number(conversationId)) {
+                        setDmMessages((currentMessages) => [...currentMessages, response.message]);
+                    }
+
+                    resolve(response);
+                });
+            });
+        }
+
+        const response = await fetch(`/api/conversations/${selectedConversation.id}/messages`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ content }),
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.message) {
+            setDmMessages((currentMessages) => [...currentMessages, data.message]);
+        }
+
+        return data;
+    }
+
     async function sendMessage(content) {
+        if (selectedConversation) {
+            return sendDmMessage(content);
+        }
+
         if (!selected || !activeChannel) {
             return null;
         }
@@ -568,7 +738,8 @@ function HomePage() {
 
     function handleSend(e) {
         e.preventDefault();
-        if (!draft.trim() || !selected || !activeChannel || activeChannel.type !== 'text') return;
+        const canSend = selectedConversation || (selected && activeChannel && activeChannel.type === 'text');
+        if (!draft.trim() || !canSend) return;
 
         const content = draft.trim();
         setDraft('');
@@ -583,107 +754,34 @@ function HomePage() {
         });
     }
 
-    const initiale = user?.pseudo?.[0]?.toUpperCase() ?? 'A';
     const unreadByServer = flattenUnreadCounts(servers, unreadCounts);
-    const canSendMessage = Boolean(selected && activeChannel && activeChannel.type === 'text');
+    const canSendMessage = Boolean(selectedConversation) || Boolean(selected && activeChannel && activeChannel.type === 'text');
+    const displayMessages = selectedConversation ? dmMessages : messages;
+    const isLoadingDisplayMessages = selectedConversation ? loadingDmMessages : loadingMessages;
     const canManageChannels = Boolean(selected && (user?.role === 'admin' || Number(selected.owner_id) === Number(user?.id)));
     const typingLabel = typingUsers.length > 0
         ? `${typingUsers.slice(0, 2).join(', ')}${typingUsers.length > 2 ? '...' : ''} ${typingUsers.length > 1 ? 'sont' : 'est'} en train d'écrire...`
         : '';
 
     return (
-        <div className="app-layout">
-            {/* â”€â”€ Sidebar â”€â”€ */}
-            <aside className="sidebar">
-                <nav className="sidebar-topnav">
-                    <div className="sidebar-topnav-icons">
-                        <button className="snav-btn active" title="Conversations">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                            </svg>
-                        </button>
-                        <button className="snav-btn" title="Profil" onClick={() => navigate('/profile')}>
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                                <circle cx="12" cy="7" r="4" />
-                            </svg>
-                        </button>
-                        <button className="snav-btn" title="DÃ©connexion" onClick={logout}>
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                                <polyline points="16 17 21 12 16 7" />
-                                <line x1="21" y1="12" x2="9" y2="12" />
-                            </svg>
-                        </button>
-                    </div>
-                </nav>
-
-                {serverError && (
-                    <div className="sidebar-empty" style={{ padding: 16 }}>
-                        <span>{serverError}</span>
-                    </div>
-                )}
-
-                <div className="sidebar-header">
-                    <h2>Conversation</h2>
-                    <button className="sidebar-add-btn" title="Nouveau serveur" onClick={() => setShowModal(true)}>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                        </svg>
-                    </button>
-                </div>
-
-                {servers.length === 0 ? (
-                    <div className="sidebar-empty">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                        </svg>
-                        <span>Aucune conversation</span>
-                    </div>
-                ) : (
-                    <div className="conv-list">
-                        {servers.map((s) => (
-                            <div
-                                key={s.id}
-                                className={`conv-item${selected?.id === s.id ? ' selected' : ''}`}
-                                onClick={() => {
-                                    setSelected(s);
-                                    setActiveChannel(getDefaultChannel(s));
-                                    setMessages([]);
-                                    setTypingUsers([]);
-                                    setUnreadCounts((currentCounts) => ({
-                                        ...currentCounts,
-                                        ...s.channels.reduce((accumulator, channel) => {
-                                            accumulator[channel.id] = 0;
-                                            return accumulator;
-                                        }, {}),
-                                    }));
-                                }}
-                            >
-                                <Avatar name={s.name} />
-                                <div className="conv-body">
-                                    <div className="conv-row">
-                                        <span className="conv-name">{s.name}</span>
-                                        <div className="conv-row" style={{ gap: 8 }}>
-                                            {unreadByServer[s.id] > 0 && (
-                                                <span className="conv-badge">{unreadByServer[s.id]}</span>
-                                            )}
-                                            <span className="conv-time">
-                                                {new Date(s.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <div className="conv-preview-row">
-                                        <span className="conv-preview">
-                                            {getDefaultChannel(s) ? `#${getDefaultChannel(s).name}` : 'Aucun salon'}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </aside>
+        <div className="page-shell">
+            <Header />
+            <div className="app-layout">
+            <Sidebar
+                servers={servers}
+                conversations={conversations}
+                selected={selected}
+                selectedConversation={selectedConversation}
+                unreadByServer={unreadByServer}
+                dmUnreadCounts={dmUnreadCounts}
+                serverError={serverError}
+                statuses={statuses}
+                onSelectServer={selectServer}
+                onSelectConversation={selectConversation}
+                onCreateServer={() => setShowModal(true)}
+                onCreateDm={() => setShowNewDmModal(true)}
+                getDefaultChannel={getDefaultChannel}
+            />
 
             {/* ── Channel sidebar ── */}
             {selected && (
@@ -828,29 +926,21 @@ function HomePage() {
 
             {/* ── Main chat ── */}
             <main className="chat-main">
-                {/* Top bar */}
-                <div className="chat-topbar">
-                    <div className="chat-search">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-                        </svg>
-                        <input type="text" placeholder="Rechercher..." />
-                    </div>
-                    <div
-                        className="chat-user-avatar"
-                        title="Mon profil"
-                        onClick={() => navigate('/profile')}
-                    >
-                        {initiale}
-                    </div>
-                </div>
-
-                {selected ? (
+                {(selected || selectedConversation) ? (
                     <>
                         {/* Contact header */}
                         <div className="chat-contact-header">
-                            <span className="cs-channel-hash" style={{ fontSize: 20, color: '#94a3b8' }}>#</span>
-                            <span className="chat-contact-name">{activeChannel?.name ?? selected.name}</span>
+                            {selectedConversation ? (
+                                <>
+                                    <Avatar name={selectedConversation.user.pseudo} size={28} />
+                                    <span className="chat-contact-name">{selectedConversation.user.pseudo}</span>
+                                </>
+                            ) : (
+                                <>
+                                    <span className="cs-channel-hash" style={{ fontSize: 20, color: '#94a3b8' }}>#</span>
+                                    <span className="chat-contact-name">{activeChannel?.name ?? selected.name}</span>
+                                </>
+                            )}
                             <div className="chat-action-btns">
                                 <button className="chat-action-btn" title="Appel vocal">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -867,17 +957,21 @@ function HomePage() {
 
                         {/* Messages */}
                         <div className="chat-messages">
-                            {loadingMessages && (
+                            {isLoadingDisplayMessages && (
                                 <div style={{ color: '#334155', fontSize: 13, textAlign: 'center', marginTop: 'auto' }}>
                                     Chargement de l'historique...
                                 </div>
                             )}
-                            {!loadingMessages && messages.length === 0 && (
+                            {!isLoadingDisplayMessages && displayMessages.length === 0 && (
                                 <div style={{ color: '#334155', fontSize: 13, textAlign: 'center', marginTop: 'auto' }}>
-                                    Début de la conversation dans <strong style={{ color: '#4fd1e8' }}>#{activeChannel?.name ?? 'général'}</strong>
+                                    {selectedConversation ? (
+                                        <>Début de la conversation avec <strong style={{ color: '#4fd1e8' }}>{selectedConversation.user.pseudo}</strong></>
+                                    ) : (
+                                        <>Début de la conversation dans <strong style={{ color: '#4fd1e8' }}>#{activeChannel?.name ?? 'général'}</strong></>
+                                    )}
                                 </div>
                             )}
-                            {messages.map((m) =>
+                            {displayMessages.map((m) =>
                                 Number(m.authorId) === Number(user?.id) ? (
                                     <div key={m.id} className="msg-group msg-sent">
                                         <div className="msg-bubble-list">
@@ -898,7 +992,7 @@ function HomePage() {
                                     </div>
                                 )
                             )}
-                            {typingLabel && (
+                            {!selectedConversation && typingLabel && (
                                 <div style={{ color: '#64748b', fontSize: 12, marginLeft: 16, marginTop: 4 }}>
                                     {typingLabel}
                                 </div>
@@ -955,6 +1049,45 @@ function HomePage() {
                 </div>
             )}
 
+            {/* Modale nouveau message privé */}
+            {showNewDmModal && (
+                <div className="modal-overlay" onClick={closeNewDmModal}>
+                    <form className="modal-box" onClick={(e) => e.stopPropagation()} onSubmit={handleCreateConversation}>
+                        <h3>Nouveau message privé</h3>
+                        <input
+                            type="text"
+                            placeholder="Pseudo de l'utilisateur"
+                            value={newDmPseudo}
+                            onChange={(e) => setNewDmPseudo(e.target.value)}
+                            autoFocus
+                        />
+                        {dmSuggestions.length > 0 && (
+                            <div className="dm-suggestion-list">
+                                {dmSuggestions.map((suggestion) => (
+                                    <div
+                                        key={suggestion.id}
+                                        className="dm-suggestion-item"
+                                        onClick={() => handleCreateConversation(null, suggestion.pseudo)}
+                                    >
+                                        <Avatar name={suggestion.pseudo} size={26} />
+                                        <span>{suggestion.pseudo}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        {dmError && (
+                            <p style={{ color: '#f87171', fontSize: 13, margin: 0 }}>{dmError}</p>
+                        )}
+                        <div className="modal-actions">
+                            <button type="button" className="modal-cancel" onClick={closeNewDmModal}>Annuler</button>
+                            <button type="submit" className="modal-confirm" disabled={!newDmPseudo.trim() || creatingDm}>
+                                {creatingDm ? 'Création...' : 'Démarrer'}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            )}
+
             {/* Modale création serveur */}
             {showModal && (
                 <div className="modal-overlay" onClick={() => setShowModal(false)}>
@@ -977,6 +1110,7 @@ function HomePage() {
                     </form>
                 </div>
             )}
+            </div>
         </div>
     );
 }
