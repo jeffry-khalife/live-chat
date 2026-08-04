@@ -12,10 +12,15 @@ function avatarColor(name = '') {
 }
 
 function Avatar({ name = '?', size, style = {} }) {
+    let fontSize;
+    if (size) {
+        fontSize = size * 0.38;
+    }
+
     return (
         <div
             className="conv-avatar"
-            style={{ background: avatarColor(name), width: size, height: size, fontSize: size ? size * 0.38 : undefined, ...style }}
+            style={{ background: avatarColor(name), width: size, height: size, fontSize, ...style }}
         >
             {name[0]?.toUpperCase()}
         </div>
@@ -24,6 +29,14 @@ function Avatar({ name = '?', size, style = {} }) {
 
 function getDefaultChannel(server) {
     return server.channels.find((channel) => channel.type === 'text') ?? server.channels[0] ?? null;
+}
+
+function getConversationPreview(server) {
+    const defaultChannel = getDefaultChannel(server);
+    if (!defaultChannel) {
+        return 'Aucun salon';
+    }
+    return `#${defaultChannel.name}`;
 }
 
 function formatMessageTime(value) {
@@ -70,7 +83,11 @@ function flattenUnreadCounts(servers, unreadCounts) {
 }
 
 function mergeChannels(existingChannels = [], incomingChannel) {
-    const nextChannels = Array.isArray(incomingChannel) ? incomingChannel : [incomingChannel];
+    let nextChannels = [incomingChannel];
+    if (Array.isArray(incomingChannel)) {
+        nextChannels = incomingChannel;
+    }
+
     const merged = [];
     const seenIds = new Set();
 
@@ -94,6 +111,65 @@ function pickFallbackChannel(channels = [], removedChannelId) {
     return channels.find((channel) => Number(channel.id) !== Number(removedChannelId) && channel.type === 'text')
         ?? channels.find((channel) => Number(channel.id) !== Number(removedChannelId))
         ?? null;
+}
+
+function addServerChannel(server, serverId, channel) {
+    if (Number(server.id) !== Number(serverId)) {
+        return server;
+    }
+    return { ...server, channels: mergeChannels(server.channels, channel) };
+}
+
+function addSelectedChannel(currentSelected, serverId, channel) {
+    if (!currentSelected || Number(currentSelected.id) !== Number(serverId)) {
+        return currentSelected;
+    }
+    return { ...currentSelected, channels: mergeChannels(currentSelected.channels, channel) };
+}
+
+function MessageItem({ message, currentUser }) {
+    if (Number(message.authorId) === Number(currentUser?.id)) {
+        return (
+            <div className="msg-group msg-sent">
+                <div className="msg-bubble-list">
+                    <div className="msg-bubble">{message.content}</div>
+                </div>
+                <div className="msg-sent-time">{formatMessageTime(message.createdAt)}</div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="msg-group msg-received">
+            <div className="msg-group-header">
+                <Avatar name={message.author?.pseudo ?? getMessageAuthor(message, currentUser)} size={28} />
+                <span className="msg-sender">{getMessageAuthor(message, currentUser)}</span>
+                <span className="msg-group-time">{formatMessageTime(message.createdAt)}</span>
+            </div>
+            <div className="msg-bubble-list">
+                <div className="msg-bubble">{message.content}</div>
+            </div>
+        </div>
+    );
+}
+
+function getTypingLabel(typingUsers) {
+    if (typingUsers.length === 0) {
+        return '';
+    }
+
+    const names = typingUsers.slice(0, 2).join(', ');
+    let suffix = '';
+    if (typingUsers.length > 2) {
+        suffix = '...';
+    }
+
+    let verb = 'est';
+    if (typingUsers.length > 1) {
+        verb = 'sont';
+    }
+
+    return `${names}${suffix} ${verb} en train d'écrire...`;
 }
 
 function HomePage() {
@@ -261,18 +337,10 @@ function HomePage() {
         socket.on('chat:notification', handleNotification);
         socket.on('chat:typing', handleTyping);
         socket.on('server:channel-created', ({ serverId, channel }) => {
-            setServers((currentServers) => currentServers.map((server) => (
-                Number(server.id) === Number(serverId)
-                    ? { ...server, channels: mergeChannels(server.channels, channel) }
-                    : server
-            )));
+            setServers((currentServers) => currentServers.map((server) => addServerChannel(server, serverId, channel)));
 
             if (Number(selectedId) === Number(serverId)) {
-                setSelected((currentSelected) => (
-                    currentSelected && Number(currentSelected.id) === Number(serverId)
-                        ? { ...currentSelected, channels: mergeChannels(currentSelected.channels, channel) }
-                        : currentSelected
-                ));
+                setSelected((currentSelected) => addSelectedChannel(currentSelected, serverId, channel));
             }
         });
         socket.on('server:channel-deleted', ({ serverId, channelId }) => {
@@ -291,9 +359,13 @@ function HomePage() {
                 }
 
                 const nextChannels = removeChannel(currentSelected.channels, channelId);
-                const nextActiveChannel = Number(activeChannelId) === Number(channelId)
-                    ? pickFallbackChannel(nextChannels, channelId)
-                    : currentSelected.channels.find((item) => Number(item.id) === Number(activeChannelId)) ?? null;
+
+                let nextActiveChannel;
+                if (Number(activeChannelId) === Number(channelId)) {
+                    nextActiveChannel = pickFallbackChannel(nextChannels, channelId);
+                } else {
+                    nextActiveChannel = currentSelected.channels.find((item) => Number(item.id) === Number(activeChannelId)) ?? null;
+                }
 
                 setActiveChannel(nextActiveChannel);
                 if (Number(activeChannelId) === Number(channelId)) {
@@ -418,16 +490,8 @@ function HomePage() {
                 return;
             }
 
-            setServers((currentServers) => currentServers.map((server) => (
-                server.id === selected.id
-                    ? { ...server, channels: mergeChannels(server.channels, data.channel) }
-                    : server
-            )));
-            setSelected((currentSelected) => (
-                currentSelected && currentSelected.id === selected.id
-                    ? { ...currentSelected, channels: mergeChannels(currentSelected.channels, data.channel) }
-                    : currentSelected
-            ));
+            setServers((currentServers) => currentServers.map((server) => addServerChannel(server, selected.id, data.channel)));
+            setSelected((currentSelected) => addSelectedChannel(currentSelected, selected.id, data.channel));
 
             if (channelType === 'text') {
                 setActiveChannel(data.channel);
@@ -587,13 +651,47 @@ function HomePage() {
         });
     }
 
+    function selectServer(server) {
+        setSelected(server);
+        setActiveChannel(getDefaultChannel(server));
+        setMessages([]);
+        setTypingUsers([]);
+        setUnreadCounts((currentCounts) => {
+            const resetCounts = {};
+            for (const channel of server.channels) {
+                resetCounts[channel.id] = 0;
+            }
+            return { ...currentCounts, ...resetCounts };
+        });
+    }
+
+    function selectChannel(channel) {
+        setActiveChannel(channel);
+        setMessages([]);
+        setTypingUsers([]);
+        setUnreadCounts((currentCounts) => ({ ...currentCounts, [channel.id]: 0 }));
+    }
+
     const initiale = user?.pseudo?.[0]?.toUpperCase() ?? 'A';
     const unreadByServer = flattenUnreadCounts(servers, unreadCounts);
     const canSendMessage = Boolean(selected && activeChannel && activeChannel.type === 'text');
     const canManageChannels = Boolean(selected && (user?.role === 'admin' || Number(selected.owner_id) === Number(user?.id)));
-    const typingLabel = typingUsers.length > 0
-        ? `${typingUsers.slice(0, 2).join(', ')}${typingUsers.length > 2 ? '...' : ''} ${typingUsers.length > 1 ? 'sont' : 'est'} en train d'écrire...`
-        : '';
+    const typingLabel = getTypingLabel(typingUsers);
+
+    let messageInputPlaceholder = 'Le salon vocal ne permet pas l\'envoi de messages';
+    if (canSendMessage) {
+        messageInputPlaceholder = 'Tapez un message...';
+    }
+
+    let createServerLabel = 'Créer';
+    if (creating) {
+        createServerLabel = 'Création...';
+    }
+
+    let createChannelLabel = 'Créer';
+    if (creatingChannel) {
+        createChannelLabel = 'Création...';
+    }
 
     return (
         <div className="app-layout">
@@ -637,54 +735,49 @@ function HomePage() {
                     </button>
                 </div>
 
-                {servers.length === 0 ? (
+                {servers.length === 0 && (
                     <div className="sidebar-empty">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                         </svg>
                         <span>Aucune conversation</span>
                     </div>
-                ) : (
+                )}
+
+                {servers.length > 0 && (
                     <div className="conv-list">
-                        {servers.map((s) => (
-                            <div
-                                key={s.id}
-                                className={`conv-item${selected?.id === s.id ? ' selected' : ''}`}
-                                onClick={() => {
-                                    setSelected(s);
-                                    setActiveChannel(getDefaultChannel(s));
-                                    setMessages([]);
-                                    setTypingUsers([]);
-                                    setUnreadCounts((currentCounts) => ({
-                                        ...currentCounts,
-                                        ...s.channels.reduce((accumulator, channel) => {
-                                            accumulator[channel.id] = 0;
-                                            return accumulator;
-                                        }, {}),
-                                    }));
-                                }}
-                            >
-                                <Avatar name={s.name} />
-                                <div className="conv-body">
-                                    <div className="conv-row">
-                                        <span className="conv-name">{s.name}</span>
-                                        <div className="conv-row" style={{ gap: 8 }}>
-                                            {unreadByServer[s.id] > 0 && (
-                                                <span className="conv-badge">{unreadByServer[s.id]}</span>
-                                            )}
-                                            <span className="conv-time">
-                                                {new Date(s.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                                            </span>
+                        {servers.map((s) => {
+                            let convItemClass = 'conv-item';
+                            if (selected?.id === s.id) {
+                                convItemClass += ' selected';
+                            }
+
+                            return (
+                                <div
+                                    key={s.id}
+                                    className={convItemClass}
+                                    onClick={() => selectServer(s)}
+                                >
+                                    <Avatar name={s.name} />
+                                    <div className="conv-body">
+                                        <div className="conv-row">
+                                            <span className="conv-name">{s.name}</span>
+                                            <div className="conv-row" style={{ gap: 8 }}>
+                                                {unreadByServer[s.id] > 0 && (
+                                                    <span className="conv-badge">{unreadByServer[s.id]}</span>
+                                                )}
+                                                <span className="conv-time">
+                                                    {new Date(s.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div className="conv-preview-row">
+                                            <span className="conv-preview">{getConversationPreview(s)}</span>
                                         </div>
                                     </div>
-                                    <div className="conv-preview-row">
-                                        <span className="conv-preview">
-                                            {getDefaultChannel(s) ? `#${getDefaultChannel(s).name}` : 'Aucun salon'}
-                                        </span>
-                                    </div>
                                 </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 )}
             </aside>
@@ -723,45 +816,47 @@ function HomePage() {
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                             </button>
                         </div>
-                        {selected.channels.filter((c) => c.type === 'text').map((c) => (
-                            <div
-                                key={c.id}
-                                className={`cs-channel${activeChannel?.id === c.id ? ' active' : ''}`}
-                                onClick={() => {
-                                    setActiveChannel(c);
-                                    setMessages([]);
-                                    setTypingUsers([]);
-                                    setUnreadCounts((currentCounts) => ({ ...currentCounts, [c.id]: 0 }));
-                                }}
-                            >
-                                <span className="cs-channel-hash">#</span>
-                                <span className="cs-channel-name">{c.name}</span>
-                                {unreadCounts[c.id] > 0 && (
-                                    <span className="conv-badge">{unreadCounts[c.id]}</span>
-                                )}
-                                {canManageChannels && (
-                                    <div className="cs-channel-actions">
-                                        <button
-                                            type="button"
-                                            className="cs-channel-action-btn"
-                                            title="Supprimer le salon"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleDeleteChannel(c.id);
-                                            }}
-                                        >
-                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                <path d="M3 6h18" />
-                                                <path d="M8 6V4h8v2" />
-                                                <path d="M6 6l1 14h10l1-14" />
-                                                <path d="M10 11v6" />
-                                                <path d="M14 11v6" />
-                                            </svg>
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        ))}
+                        {selected.channels.filter((c) => c.type === 'text').map((c) => {
+                            let channelClass = 'cs-channel';
+                            if (activeChannel?.id === c.id) {
+                                channelClass += ' active';
+                            }
+
+                            return (
+                                <div
+                                    key={c.id}
+                                    className={channelClass}
+                                    onClick={() => selectChannel(c)}
+                                >
+                                    <span className="cs-channel-hash">#</span>
+                                    <span className="cs-channel-name">{c.name}</span>
+                                    {unreadCounts[c.id] > 0 && (
+                                        <span className="conv-badge">{unreadCounts[c.id]}</span>
+                                    )}
+                                    {canManageChannels && (
+                                        <div className="cs-channel-actions">
+                                            <button
+                                                type="button"
+                                                className="cs-channel-action-btn"
+                                                title="Supprimer le salon"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleDeleteChannel(c.id);
+                                                }}
+                                            >
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                    <path d="M3 6h18" />
+                                                    <path d="M8 6V4h8v2" />
+                                                    <path d="M6 6l1 14h10l1-14" />
+                                                    <path d="M10 11v6" />
+                                                    <path d="M14 11v6" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
 
                     {/* Voice channels */}
@@ -823,7 +918,7 @@ function HomePage() {
                         <div className="modal-actions">
                             <button type="button" className="modal-cancel" onClick={() => setShowChannelModal(false)}>Annuler</button>
                             <button type="submit" className="modal-confirm" disabled={!channelName.trim() || creatingChannel}>
-                                {creatingChannel ? 'Création...' : 'Créer'}
+                                {createChannelLabel}
                             </button>
                         </div>
                     </form>
@@ -849,7 +944,16 @@ function HomePage() {
                     </div>
                 </div>
 
-                {selected ? (
+                {!selected && (
+                    <div className="chat-placeholder">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                        </svg>
+                        <span>Sélectionne une conversation</span>
+                    </div>
+                )}
+
+                {selected && (
                     <>
                         {/* Contact header */}
                         <div className="chat-contact-header">
@@ -881,27 +985,9 @@ function HomePage() {
                                     Début de la conversation dans <strong style={{ color: '#4fd1e8' }}>#{activeChannel?.name ?? 'général'}</strong>
                                 </div>
                             )}
-                            {messages.map((m) =>
-                                Number(m.authorId) === Number(user?.id) ? (
-                                    <div key={m.id} className="msg-group msg-sent">
-                                        <div className="msg-bubble-list">
-                                            <div className="msg-bubble">{m.content}</div>
-                                        </div>
-                                        <div className="msg-sent-time">{formatMessageTime(m.createdAt)}</div>
-                                    </div>
-                                ) : (
-                                    <div key={m.id} className="msg-group msg-received">
-                                        <div className="msg-group-header">
-                                            <Avatar name={m.author?.pseudo ?? getMessageAuthor(m, user)} size={28} />
-                                            <span className="msg-sender">{getMessageAuthor(m, user)}</span>
-                                            <span className="msg-group-time">{formatMessageTime(m.createdAt)}</span>
-                                        </div>
-                                        <div className="msg-bubble-list">
-                                            <div className="msg-bubble">{m.content}</div>
-                                        </div>
-                                    </div>
-                                )
-                            )}
+                            {messages.map((m) => (
+                                <MessageItem key={m.id} message={m} currentUser={user} />
+                            ))}
                             {typingLabel && (
                                 <div style={{ color: '#64748b', fontSize: 12, marginLeft: 16, marginTop: 4 }}>
                                     {typingLabel}
@@ -915,7 +1001,7 @@ function HomePage() {
                             <form className="chat-input-wrap" onSubmit={handleSend}>
                                 <input
                                     type="text"
-                                    placeholder={canSendMessage ? 'Tapez un message...' : 'Le salon vocal ne permet pas l\'envoi de messages'}
+                                    placeholder={messageInputPlaceholder}
                                     value={draft}
                                     onChange={handleDraftChange}
                                     disabled={!canSendMessage}
@@ -929,13 +1015,6 @@ function HomePage() {
                             </form>
                         </div>
                     </>
-                ) : (
-                    <div className="chat-placeholder">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2">
-                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                        </svg>
-                        <span>Sélectionne une conversation</span>
-                    </div>
                 )}
             </main>
 
@@ -975,7 +1054,7 @@ function HomePage() {
                         <div className="modal-actions">
                             <button type="button" className="modal-cancel" onClick={() => setShowModal(false)}>Annuler</button>
                             <button type="submit" className="modal-confirm" disabled={!newName.trim() || creating}>
-                                {creating ? 'Création...' : 'Créer'}
+                                {createServerLabel}
                             </button>
                         </div>
                     </form>
