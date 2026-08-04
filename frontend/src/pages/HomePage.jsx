@@ -392,10 +392,10 @@ function HomePage() {
         }
     }
 
-    function selectServer(server) {
+    function selectServer(server, channel) {
         setSelectedConversation(null);
         setSelected(server);
-        setActiveChannel(getDefaultChannel(server));
+        setActiveChannel(channel ?? getDefaultChannel(server));
         setMessages([]);
         setTypingUsers([]);
         setUnreadCounts((currentCounts) => ({
@@ -422,7 +422,10 @@ function HomePage() {
         if (state.openServerId) {
             const server = servers.find((s) => Number(s.id) === Number(state.openServerId));
             if (server) {
-                selectServer(server);
+                const channel = state.openChannelId
+                    ? server.channels.find((c) => Number(c.id) === Number(state.openChannelId))
+                    : undefined;
+                selectServer(server, channel);
                 navigate(location.pathname, { replace: true, state: {} });
             }
             return;

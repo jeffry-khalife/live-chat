@@ -92,6 +92,22 @@
     font-size: 14px;
 }
 
+.app-header-result-hash {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    color: var(--text-subtle);
+}
+
+.app-header-result-hint {
+    color: var(--text-faint);
+    font-size: 12px;
+}
+
 .app-header-result-item:hover { background: var(--bg-hover); }
 
 .app-header-account {

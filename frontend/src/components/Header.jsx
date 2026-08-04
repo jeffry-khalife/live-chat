@@ -50,8 +50,15 @@ function Header() {
     const searchTimeoutRef = useRef(null);
 
     const initial = (user?.pseudo?.[0] || '?').toUpperCase();
-    const serverResults = query.trim()
-        ? servers.filter((server) => server.name.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 5)
+    const trimmedQuery = query.trim().toLowerCase();
+    const serverResults = trimmedQuery
+        ? servers.filter((server) => server.name.toLowerCase().includes(trimmedQuery)).slice(0, 5)
+        : [];
+    const channelResults = trimmedQuery
+        ? servers
+            .flatMap((server) => server.channels.map((channel) => ({ channel, server })))
+            .filter(({ channel }) => channel.name.toLowerCase().includes(trimmedQuery))
+            .slice(0, 5)
         : [];
 
     useEffect(() => {
@@ -82,6 +89,11 @@ function Header() {
     function openServer(server) {
         closeSearch();
         navigate('/', { state: { openServerId: server.id } });
+    }
+
+    function openChannel(server, channel) {
+        closeSearch();
+        navigate('/', { state: { openServerId: server.id, openChannelId: channel.id } });
     }
 
     async function openConversationWith(pseudo) {
@@ -123,7 +135,7 @@ function Header() {
                     <>
                         <div className="app-header-backdrop" onClick={closeSearch} />
                         <div className="app-header-results">
-                            {userResults.length === 0 && serverResults.length === 0 && (
+                            {userResults.length === 0 && serverResults.length === 0 && channelResults.length === 0 && (
                                 <div className="app-header-results-empty">Aucun résultat</div>
                             )}
 
@@ -154,6 +166,25 @@ function Header() {
                                         >
                                             <Avatar name={server.name} size={28} />
                                             <span>{server.name}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {channelResults.length > 0 && (
+                                <div className="app-header-results-group">
+                                    <span className="app-header-results-label">Salons</span>
+                                    {channelResults.map(({ channel, server }) => (
+                                        <div
+                                            key={channel.id}
+                                            className="app-header-result-item"
+                                            onClick={() => openChannel(server, channel)}
+                                        >
+                                            <span className="app-header-result-hash">#</span>
+                                            <span>
+                                                {channel.name}
+                                                <span className="app-header-result-hint"> dans {server.name}</span>
+                                            </span>
                                         </div>
                                     ))}
                                 </div>
