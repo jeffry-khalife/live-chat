@@ -29,6 +29,8 @@ function normalizeMessage(message) {
         reactions: message.reactions ?? [],
         createdAt: message.createdAt ?? new Date().toISOString(),
         editedAt: message.editedAt ?? null,
+        deletedAt: message.deletedAt ?? null,
+        deletedByAdmin: Boolean(message.deletedByAdmin),
         author: message.author ?? null,
     };
 }
@@ -71,6 +73,18 @@ function addSelectedChannel(currentSelected, serverId, channel) {
         return currentSelected;
     }
     return { ...currentSelected, channels: mergeChannels(currentSelected.channels, channel) };
+}
+
+function canManageSelectedServer(server, currentUser) {
+    if (!server || !currentUser?.id) {
+        return false;
+    }
+
+    if (currentUser.role === 'admin' || Number(server.owner_id) === Number(currentUser.id)) {
+        return true;
+    }
+
+    return server.members?.[0]?.role === 'admin';
 }
 
 function MessageItem({ message, currentUser }) {
@@ -150,6 +164,7 @@ function HomePage() {
     const [creatingDm, setCreatingDm] = useState(false);
     const [dmError, setDmError] = useState('');
     const [dmSuggestions, setDmSuggestions] = useState([]);
+    const [openMessageMenuId, setOpenMessageMenuId] = useState(null);
     const messagesEndRef = useRef(null);
     const typingTimeoutRef = useRef(null);
     const dmSearchTimeoutRef = useRef(null);
@@ -361,10 +376,43 @@ function HomePage() {
             setTypingUsers(clearTypingUsers(nextTypingUsers ?? []));
         };
 
+        const handleMessageDeleted = ({ channelId, messageId }) => {
+            if (Number(channelId) !== Number(activeChannelId) || !messageId) {
+                return;
+            }
+
+            setMessages((currentMessages) => currentMessages.filter((message) => String(message.id) !== String(messageId)));
+        };
+
+        const handleMessageUpdated = ({ channelId, message }) => {
+            if (Number(channelId) !== Number(activeChannelId) || !message?.id) {
+                return;
+            }
+
+            setMessages((currentMessages) => currentMessages.map((item) => (
+                String(item.id) === String(message.id) ? normalizeMessage(message) : item
+            )));
+        };
+
+        const handleServerMemberRemoved = ({ serverId, userId: removedUserId }) => {
+            if (Number(serverId) !== Number(selectedId) || Number(removedUserId) !== Number(user?.id)) {
+                return;
+            }
+
+            setSelected(null);
+            setActiveChannel(null);
+            setMessages([]);
+            setTypingUsers([]);
+            setServers((currentServers) => currentServers.filter((server) => Number(server.id) !== Number(serverId)));
+        };
+
         socket.on('chat:joined', handleJoined);
         socket.on('chat:message', handleMessage);
         socket.on('chat:notification', handleNotification);
         socket.on('chat:typing', handleTyping);
+        socket.on('chat:message-deleted', handleMessageDeleted);
+        socket.on('chat:message-updated', handleMessageUpdated);
+        socket.on('server:member-removed', handleServerMemberRemoved);
         socket.on('server:channel-created', ({ serverId, channel }) => {
             if (Number(selectedId) === Number(serverId)) {
                 setSelected((currentSelected) => addSelectedChannel(currentSelected, serverId, channel));
@@ -415,15 +463,33 @@ function HomePage() {
             socket.off('chat:message', handleMessage);
             socket.off('chat:notification', handleNotification);
             socket.off('chat:typing', handleTyping);
+            socket.off('chat:message-deleted', handleMessageDeleted);
+            socket.off('chat:message-updated', handleMessageUpdated);
+            socket.off('server:member-removed', handleServerMemberRemoved);
             socket.off('server:channel-created');
             socket.off('server:channel-deleted');
             socket.off('server:presence-updated');
         };
-    }, [activeChannelId, selectedId, socket, user?.pseudo]);
+    }, [activeChannelId, selectedId, socket, user?.id, user?.pseudo]);
 
     useEffect(() => () => {
         clearTimeout(typingTimeoutRef.current);
     }, []);
+
+    useEffect(() => {
+        if (!openMessageMenuId) {
+            return undefined;
+        }
+
+        function closeMenu() {
+            setOpenMessageMenuId(null);
+        }
+
+        document.addEventListener('click', closeMenu);
+        return () => {
+            document.removeEventListener('click', closeMenu);
+        };
+    }, [openMessageMenuId]);
 
     async function handleCreateServer(e) {
         e.preventDefault();
@@ -459,6 +525,7 @@ function HomePage() {
         setSelectedConversation(null);
         setSelected(server);
         setActiveChannel(channel ?? getDefaultChannel(server));
+        setOpenMessageMenuId(null);
         setMessages([]);
         setTypingUsers([]);
         setUnreadCounts((currentCounts) => ({
@@ -470,12 +537,92 @@ function HomePage() {
         }));
     }
 
+    function selectChannel(channel) {
+        setSelectedConversation(null);
+        setActiveChannel(channel);
+        setOpenMessageMenuId(null);
+        setUnreadCounts((currentCounts) => ({
+            ...currentCounts,
+            [channel.id]: 0,
+        }));
+    }
+
     function selectConversation(conversation) {
         setSelected(null);
         setActiveChannel(null);
+        setOpenMessageMenuId(null);
         setMessages([]);
         setTypingUsers([]);
         setSelectedConversation(conversation);
+    }
+
+    async function handleDeleteMessage(message) {
+        if (!selected || !activeChannel || !message?.id) {
+            return;
+        }
+
+        const confirmed = window.confirm('Supprimer ce message ?');
+        if (!confirmed) {
+            return;
+        }
+
+        setOpenMessageMenuId(null);
+
+        try {
+            const response = await fetch(`/api/channels/${activeChannel.id}/messages/${message.id}/delete`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+            });
+
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+                alert(data.message || 'Impossible de supprimer le message.');
+                return;
+            }
+
+            if (data.message) {
+                setMessages((currentMessages) => currentMessages.map((item) => (
+                    String(item.id) === String(message.id) ? normalizeMessage(data.message) : item
+                )));
+                return;
+            }
+
+            setMessages((currentMessages) => currentMessages.filter((item) => String(item.id) !== String(message.id)));
+        } catch {
+            alert('Impossible de supprimer le message.');
+        }
+    }
+
+    async function handleRemoveUserFromServer(authorId, authorPseudo) {
+        if (!selected || !authorId) {
+            return;
+        }
+
+        const confirmed = window.confirm(`Retirer ${authorPseudo || 'cet utilisateur'} du serveur ?`);
+        if (!confirmed) {
+            return;
+        }
+
+        setOpenMessageMenuId(null);
+
+        try {
+            const response = await fetch(`/api/servers/${selected.id}/members/${authorId}/remove`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+            });
+
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+                alert(data.message || 'Impossible de supprimer l\'utilisateur du serveur.');
+                return;
+            }
+
+            alert('Utilisateur supprimé du serveur.');
+        } catch {
+            alert('Impossible de supprimer l\'utilisateur du serveur.');
+        }
     }
 
     useEffect(() => {
@@ -816,7 +963,8 @@ function HomePage() {
     const canSendMessage = Boolean(selectedConversation) || Boolean(selected && activeChannel && activeChannel.type === 'text');
     const displayMessages = selectedConversation ? dmMessages : messages;
     const isLoadingDisplayMessages = selectedConversation ? loadingDmMessages : loadingMessages;
-    const canManageChannels = Boolean(selected && (user?.role === 'admin' || Number(selected.owner_id) === Number(user?.id)));
+    const canManageChannels = canManageSelectedServer(selected, user);
+    const canModerateServerMessages = canManageSelectedServer(selected, user);
     const typingLabel = getTypingLabel(typingUsers);
 
     let messageInputPlaceholder = 'Le salon vocal ne permet pas l\'envoi de messages';
@@ -1029,7 +1177,7 @@ function HomePage() {
                         </div>
 
                         {/* Messages */}
-                        <div className="chat-messages">
+                        <div className="chat-messages" onClick={() => setOpenMessageMenuId(null)}>
                             {isLoadingDisplayMessages && (
                                 <div style={{ color: '#334155', fontSize: 13, textAlign: 'center', marginTop: 'auto' }}>
                                     Chargement de l'historique...
@@ -1044,27 +1192,77 @@ function HomePage() {
                                     )}
                                 </div>
                             )}
-                            {displayMessages.map((m) =>
-                                Number(m.authorId) === Number(user?.id) ? (
-                                    <div key={m.id} className="msg-group msg-sent">
+                            {displayMessages.map((m) => {
+                                const isOwnMessage = Number(m.authorId) === Number(user?.id);
+                                const canShowMenu = !selectedConversation && !m.deletedAt && (canModerateServerMessages || isOwnMessage);
+                                const canRemoveAuthor = !selectedConversation
+                                    && canModerateServerMessages
+                                    && !isOwnMessage
+                                    && Number(m.authorId) > 0;
+
+                                return (
+                                    <div
+                                        key={m.id}
+                                        className={`msg-group ${isOwnMessage ? 'msg-sent' : 'msg-received'}`}
+                                        onClick={(event) => event.stopPropagation()}
+                                    >
+                                        {!isOwnMessage && (
+                                            <div className="msg-group-header">
+                                                <Avatar name={m.author?.pseudo ?? getMessageAuthor(m, user)} size={28} />
+                                                <span className="msg-sender">{getMessageAuthor(m, user)}</span>
+                                                <span className="msg-group-time">{formatMessageTime(m.createdAt)}</span>
+                                            </div>
+                                        )}
+
                                         <div className="msg-bubble-list">
-                                            <div className="msg-bubble">{m.content}</div>
+                                            <div className="msg-bubble-row">
+                                                <div className={`msg-bubble${m.deletedAt ? ' msg-bubble-deleted' : ''}`}>{m.content}</div>
+                                                {canShowMenu && (
+                                                    <div
+                                                        className={`msg-actions-wrap${openMessageMenuId === m.id ? ' is-open' : ''}`}
+                                                        onClick={(event) => event.stopPropagation()}
+                                                    >
+                                                        <button
+                                                            type="button"
+                                                            className="msg-actions-trigger"
+                                                            title="Actions du message"
+                                                            onClick={() => setOpenMessageMenuId((currentId) => (currentId === m.id ? null : m.id))}
+                                                        >
+                                                            <span />
+                                                            <span />
+                                                            <span />
+                                                        </button>
+                                                        {openMessageMenuId === m.id && (
+                                                            <div className={`msg-actions-menu ${isOwnMessage ? 'align-right' : 'align-left'}`}>
+                                                                <button
+                                                                    type="button"
+                                                                    className="msg-actions-item danger"
+                                                                    onClick={() => handleDeleteMessage(m)}
+                                                                >
+                                                                    Supprimer le message
+                                                                </button>
+                                                                {canRemoveAuthor && (
+                                                                    <button
+                                                                        type="button"
+                                                                        className="msg-actions-item danger"
+                                                                        onClick={() => handleRemoveUserFromServer(m.authorId, getMessageAuthor(m, user))}
+                                                                    >
+                                                                        Supprimer l'utilisateur
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
-                                        <div className="msg-sent-time">{formatMessageTime(m.createdAt)}</div>
+
+                                        {isOwnMessage
+                                            ? <div className="msg-sent-time">{formatMessageTime(m.createdAt)}</div>
+                                            : null}
                                     </div>
-                                ) : (
-                                    <div key={m.id} className="msg-group msg-received">
-                                        <div className="msg-group-header">
-                                            <Avatar name={m.author?.pseudo ?? getMessageAuthor(m, user)} size={28} />
-                                            <span className="msg-sender">{getMessageAuthor(m, user)}</span>
-                                            <span className="msg-group-time">{formatMessageTime(m.createdAt)}</span>
-                                        </div>
-                                        <div className="msg-bubble-list">
-                                            <div className="msg-bubble">{m.content}</div>
-                                        </div>
-                                    </div>
-                                )
-                            )}
+                                );
+                            })}
                             {!selectedConversation && typingLabel && (
                                 <div style={{ color: '#64748b', fontSize: 12, marginLeft: 16, marginTop: 4 }}>
                                     {typingLabel}

@@ -1,3 +1,4 @@
+const { ObjectId } = require('mongodb');
 const { connectMongo } = require('../config/mongo.js');
 const redisConfig = require('../config/redis.js');
 
@@ -39,6 +40,8 @@ function normalizeMessage(document) {
         reactions: document.reactions ?? [],
         createdAt: document.createdAt,
         editedAt: document.editedAt ?? null,
+        deletedAt: document.deletedAt ?? null,
+        deletedByAdmin: Boolean(document.deletedByAdmin),
     };
 
     if (document.scope === 'dm') {
@@ -159,10 +162,146 @@ async function createDmMessage({ conversationId, authorId, content, attachments 
     return createMessage({ roomId: conversationId, scope: 'dm', authorId, content, attachments });
 }
 
+async function findById(messageId) {
+    if (!ObjectId.isValid(messageId)) {
+        return null;
+    }
+
+    const db = await getDatabase();
+    const document = await db.collection('messages').findOne({ _id: new ObjectId(messageId) });
+
+    return normalizeMessage(document);
+}
+
+async function deleteById(messageId) {
+    if (!ObjectId.isValid(messageId)) {
+        return null;
+    }
+
+    const db = await getDatabase();
+    const objectId = new ObjectId(messageId);
+    const document = await db.collection('messages').findOne({ _id: objectId });
+
+    if (!document) {
+        return null;
+    }
+
+    await db.collection('messages').deleteOne({ _id: objectId });
+    const deletedMessage = normalizeMessage(document);
+
+    try {
+        const cached = await getRecentMessages(document.scope, document.roomId);
+
+        if (cached) {
+            await setRecentMessages(
+                document.scope,
+                document.roomId,
+                cached.filter((message) => String(message.id) !== String(messageId)),
+            );
+        }
+    } catch (error) {
+    }
+
+    return deletedMessage;
+}
+
+async function softDeleteByAdmin(messageId) {
+    if (!ObjectId.isValid(messageId)) {
+        return null;
+    }
+
+    const db = await getDatabase();
+    const objectId = new ObjectId(messageId);
+    const updateResult = await db.collection('messages').findOneAndUpdate(
+        { _id: objectId },
+        {
+            $set: {
+                content: 'Message supprimé par l\'administrateur.',
+                editedAt: new Date(),
+                deletedAt: new Date(),
+                deletedByAdmin: true,
+                attachments: [],
+                reactions: [],
+            },
+        },
+        { returnDocument: 'after' },
+    );
+
+    if (!updateResult) {
+        return null;
+    }
+
+    const updatedMessage = normalizeMessage(updateResult);
+
+    try {
+        const cached = await getRecentMessages(updateResult.scope, updateResult.roomId);
+
+        if (cached) {
+            await setRecentMessages(
+                updateResult.scope,
+                updateResult.roomId,
+                cached.map((message) => (String(message.id) === String(messageId) ? updatedMessage : message)),
+            );
+        }
+    } catch (error) {
+    }
+
+    return updatedMessage;
+}
+
+async function softDeleteByAuthor(messageId, pseudo) {
+    if (!ObjectId.isValid(messageId)) {
+        return null;
+    }
+
+    const db = await getDatabase();
+    const objectId = new ObjectId(messageId);
+    const safePseudo = pseudo?.trim() || 'Utilisateur';
+    const updateResult = await db.collection('messages').findOneAndUpdate(
+        { _id: objectId },
+        {
+            $set: {
+                content: `${safePseudo} a supprimé son message.`,
+                editedAt: new Date(),
+                deletedAt: new Date(),
+                deletedByAdmin: false,
+                attachments: [],
+                reactions: [],
+            },
+        },
+        { returnDocument: 'after' },
+    );
+
+    if (!updateResult) {
+        return null;
+    }
+
+    const updatedMessage = normalizeMessage(updateResult);
+
+    try {
+        const cached = await getRecentMessages(updateResult.scope, updateResult.roomId);
+
+        if (cached) {
+            await setRecentMessages(
+                updateResult.scope,
+                updateResult.roomId,
+                cached.map((message) => (String(message.id) === String(messageId) ? updatedMessage : message)),
+            );
+        }
+    } catch (error) {
+    }
+
+    return updatedMessage;
+}
+
 module.exports = {
     findByChannelId,
     create,
     findByConversationId,
     createDmMessage,
+    findById,
+    deleteById,
+    softDeleteByAdmin,
+    softDeleteByAuthor,
     normalizeMessage,
 };

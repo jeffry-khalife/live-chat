@@ -330,6 +330,114 @@
     align-items: flex-start;
 }
 
+.msg-bubble-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.msg-actions-wrap {
+    position: relative;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+}
+
+.msg-group:hover .msg-actions-wrap,
+.msg-actions-wrap.is-open,
+.msg-actions-wrap:focus-within {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.msg-actions-trigger {
+    margin-top: 4px;
+    width: 22px;
+    height: 22px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    border-radius: 999px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 0;
+}
+
+.msg-actions-trigger span {
+    width: 3px;
+    height: 3px;
+    border-radius: 999px;
+    background: var(--text-dim);
+}
+
+.msg-actions-trigger:hover span {
+    background: var(--text-primary);
+}
+
+.msg-actions-menu {
+    position: absolute;
+    top: 28px;
+    min-width: 190px;
+    background: rgba(20, 28, 44, 0.98);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow-elevated);
+    backdrop-filter: blur(6px);
+    padding: 6px;
+    z-index: 15;
+    transform-origin: top;
+    animation: msg-menu-in 0.14s ease;
+}
+
+.msg-actions-menu.align-left {
+    left: 0;
+}
+
+.msg-actions-menu.align-right {
+    right: 0;
+}
+
+@keyframes msg-menu-in {
+    from {
+        opacity: 0;
+        transform: translateY(-4px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.msg-actions-item {
+    width: 100%;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    text-align: left;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 9px 10px;
+    cursor: pointer;
+}
+
+.msg-actions-item:hover {
+    background: rgba(59, 130, 246, 0.14);
+    color: var(--text-primary);
+}
+
+.msg-actions-item.danger {
+    color: #fda4af;
+}
+
+.msg-actions-item.danger:hover {
+    background: rgba(239, 68, 68, 0.2);
+    color: #fee2e2;
+}
+
 /* Received */
 .msg-bubble {
     display: block;
@@ -357,6 +465,11 @@
     background: var(--accent);
     color: var(--text-btn);
     border-bottom-right-radius: 4px;
+}
+
+.msg-bubble-deleted {
+    font-style: italic;
+    opacity: 0.82;
 }
 
 .msg-sent-time, .msg-recv-time {

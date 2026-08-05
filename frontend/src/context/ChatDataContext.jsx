@@ -114,14 +114,24 @@ export function ChatDataProvider({ children }) {
             )));
         }
 
+        function handleMemberRemoved({ serverId, userId }) {
+            if (Number(userId) !== Number(user?.id)) {
+                return;
+            }
+
+            setServers((currentServers) => currentServers.filter((server) => Number(server.id) !== Number(serverId)));
+        }
+
         socket.on('server:channel-created', handleChannelCreated);
         socket.on('server:channel-deleted', handleChannelDeleted);
+        socket.on('server:member-removed', handleMemberRemoved);
 
         return () => {
             socket.off('server:channel-created', handleChannelCreated);
             socket.off('server:channel-deleted', handleChannelDeleted);
+            socket.off('server:member-removed', handleMemberRemoved);
         };
-    }, [socket]);
+    }, [socket, user?.id]);
 
     return (
         <ChatDataContext.Provider
