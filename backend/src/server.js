@@ -29,28 +29,6 @@ app.get('/health', (req, res) => {
     res.json({ status: 'ok' });
 });
 
-// Temporary diagnostic endpoint — remove once the conversations 500 is fixed.
-app.get('/debug/migrate-deploy', async (req, res) => {
-    const { exec } = require('child_process');
-    exec('npx prisma migrate deploy', { cwd: __dirname + '/..' }, (error, stdout, stderr) => {
-        res.json({ error: error?.message ?? null, stdout, stderr });
-    });
-});
-
-app.get('/debug/db-check', async (req, res) => {
-    try {
-        const tableExists = await prisma.$queryRawUnsafe(
-            "SELECT to_regclass('public.conversations') IS NOT NULL AS exists",
-        );
-        const migrations = await prisma.$queryRawUnsafe(
-            'SELECT id, migration_name, started_at, finished_at, applied_steps_count, rolled_back_at, logs FROM "_prisma_migrations" ORDER BY started_at ASC',
-        );
-        res.json({ conversationsTableExists: tableExists[0]?.exists, migrations });
-    } catch (error) {
-        res.status(500).json({ message: error.message, stack: error.stack });
-    }
-});
-
 app.use('/api/auth', authRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/servers', serversRoutes);
