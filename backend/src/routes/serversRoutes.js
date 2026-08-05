@@ -9,12 +9,15 @@ const router = express.Router();
 router.get('/', auth, async (req, res) => {
 	try {
 		// Les admins voient tous les serveurs, les clients ne voient que leurs serveurs
-		const where = req.user.role === 'admin' ? {} : {
-			OR: [
-				{ owner_id: req.user.id },
-				{ members: { some: { user_id: req.user.id } } }
-			]
-		};
+		let where = {};
+		if (req.user.role !== 'admin') {
+			where = {
+				OR: [
+					{ owner_id: req.user.id },
+					{ members: { some: { user_id: req.user.id } } }
+				]
+			};
+		}
 
 		const servers = await prisma.server.findMany({
 			where,

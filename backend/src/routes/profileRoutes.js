@@ -42,11 +42,19 @@ router.patch('/', auth, async (req, res) => {
 		}
 
 		if (pseudo || email) {
+			const orConditions = [];
+			if (pseudo) {
+				orConditions.push({ pseudo });
+			}
+			if (email) {
+				orConditions.push({ email });
+			}
+
 			const existingUser = await prisma.user.findFirst({
 				where: {
 					AND: [
 						{ id: { not: req.user.id } },
-						{ OR: [...(pseudo ? [{ pseudo }] : []), ...(email ? [{ email }] : [])] },
+						{ OR: orConditions },
 					],
 				},
 			});

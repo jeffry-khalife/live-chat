@@ -38,11 +38,13 @@ app.use('/api/conversations', conversationsRoutes);
 app.get('/api/users/search', auth, async (req, res) => {
     const { q } = req.query;
     try {
+        const where = { id: { not: req.user.id } };
+        if (q && q.trim()) {
+            where.pseudo = { contains: q.trim(), mode: 'insensitive' };
+        }
+
         const users = await prisma.user.findMany({
-            where: {
-                id: { not: req.user.id },
-                ...(q?.trim() ? { pseudo: { contains: q.trim(), mode: 'insensitive' } } : {}),
-            },
+            where,
             select: { id: true, pseudo: true },
             orderBy: { pseudo: 'asc' },
             take: 10,

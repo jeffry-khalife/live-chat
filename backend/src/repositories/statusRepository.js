@@ -31,7 +31,12 @@ async function getManualStatus(userId) {
     }
 
     const value = await client.get(manualStatusKey(userId));
-    return VALID_MANUAL_STATUSES.includes(value) ? value : 'online';
+
+    if (VALID_MANUAL_STATUSES.includes(value)) {
+        return value;
+    }
+
+    return 'online';
 }
 
 async function setManualStatus(userId, status) {

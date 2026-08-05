@@ -3,7 +3,11 @@ const prisma = require('../config/sql.js');
 const PARTICIPANT_SELECT = { id: true, pseudo: true, email: true };
 
 function orderPair(userAId, userBId) {
-    return userAId < userBId ? [userAId, userBId] : [userBId, userAId];
+    if (userAId < userBId) {
+        return [userAId, userBId];
+    }
+
+    return [userBId, userAId];
 }
 
 async function findOrCreate(userAId, userBId) {
@@ -46,7 +50,11 @@ function isMember(conversation, userId) {
 }
 
 function otherParticipant(conversation, userId) {
-    return conversation.user_one_id === userId ? conversation.userTwo : conversation.userOne;
+    if (conversation.user_one_id === userId) {
+        return conversation.userTwo;
+    }
+
+    return conversation.userOne;
 }
 
 module.exports = {

@@ -87,8 +87,13 @@ router.get('/:channelId/messages', auth, async (req, res) => {
             return res.status(400).json({ message: 'Seuls les salons textuels ont un historique.' });
         }
 
+        let messageLimit = 50;
+        if (!Number.isNaN(limit)) {
+            messageLimit = Math.min(limit, 100);
+        }
+
         const messages = await messagesRepository.findByChannelId(channelId, {
-            limit: Number.isNaN(limit) ? 50 : Math.min(limit, 100),
+            limit: messageLimit,
             before: before || undefined,
         });
 

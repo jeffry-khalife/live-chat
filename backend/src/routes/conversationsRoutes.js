@@ -79,8 +79,13 @@ router.get('/:id/messages', auth, async (req, res) => {
             return res.status(404).json({ message: 'Conversation introuvable.' });
         }
 
+        let messageLimit = 50;
+        if (!Number.isNaN(limit)) {
+            messageLimit = Math.min(limit, 100);
+        }
+
         const messages = await messagesRepository.findByConversationId(conversationId, {
-            limit: Number.isNaN(limit) ? 50 : Math.min(limit, 100),
+            limit: messageLimit,
             before: before || undefined,
         });
 
