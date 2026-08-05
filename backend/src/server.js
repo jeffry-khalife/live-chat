@@ -1,9 +1,13 @@
 require('dotenv').config();
 
+const fs = require('fs');
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
+const swaggerUi = require('swagger-ui-express');
+const yaml = require('js-yaml');
 const prisma = require('./config/sql.js');
 const registerChatSocket = require('./sockets/chat.js');
 const registerWebrtcSocket = require('./sockets/webrtc.js');
@@ -17,10 +21,18 @@ const auth = require('./middlewares/auth.js');
 const statusRepository = require('./repositories/statusRepository.js');
 
 const PORT = process.env.PORT || 3000;
+const swaggerPath = path.join(__dirname, '..', 'swagger.yaml');
+const swaggerDocument = yaml.load(fs.readFileSync(swaggerPath, 'utf8'));
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+app.get('/swagger.yaml', (req, res) => {
+    res.sendFile(swaggerPath);
+});
+
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, { explorer: true }));
 
 app.get('/health', (req, res) => {
     res.json({ status: 'ok' });

@@ -157,8 +157,18 @@ Voir [docs/socket-events.md](docs/socket-events.md) pour la liste complète des 
 
 ## Documentation
 
+- Swagger / OpenAPI:
+   - Spec YAML: [backend/swagger.yaml](backend/swagger.yaml)
+   - Swagger UI local: http://localhost:3000/api-docs
+   - Raw spec: http://localhost:3000/swagger.yaml
 - [docs/architecture.png](docs/architecture.png) — architecture cible (front/back/SQL/Mongo/Redis + flux WebRTC)
 - [docs/mcd.png](docs/mcd.png) — modèle de données relationnel
 - [docs/webrtc-sequence.png](docs/webrtc-sequence.png) — séquence de signalisation WebRTC
 - [docs/socket-events.md](docs/socket-events.md) — référence des événements Socket.io
 - [docs/maquettes/](docs/maquettes/) — maquettes des écrans principaux
+
+## Swagger UI
+
+Le backend expose directement Swagger UI sur `/api-docs` a partir de `backend/swagger.yaml`.
+
+Si vous voulez ouvrir la documentation sans lancer toute l'application, vous pouvez aussi utiliser un visualiseur Swagger externe en pointant dessus le fichier `backend/swagger.yaml`.

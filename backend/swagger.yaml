@@ -1,0 +1,1460 @@
+openapi: 3.0.3
+info:
+  title: Live Chat API
+  version: 1.0.0
+  description: >
+    Documentation Live Chat. 
+    L'API expose l'authentification JWT, la gestion des profils, des serveurs,
+    des salons, des membres, des conversations privees et des messages texte.
+    Les messages sont stockes dans MongoDB, tandis que les donnees relationnelles
+    passent par Prisma/PostgreSQL.
+servers:
+  - url: http://localhost:3000
+    description: Backend local
+tags:
+  - name: Health
+    description: Verification de l'etat du service.
+  - name: Auth
+    description: Inscription, connexion, renouvellement et deconnexion.
+  - name: Profile
+    description: Consultation, mise a jour et suppression du profil courant.
+  - name: Servers
+    description: Gestion des serveurs Discord-like et de leurs salons.
+  - name: Channels
+    description: Historique et publication des messages de salon.
+  - name: Members
+    description: Gestion des membres d'un serveur.
+  - name: Conversations
+    description: Conversations privees et messages directs.
+  - name: Users
+    description: Recherche d'utilisateurs et etat de presence.
+security:
+  - bearerAuth: []
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Verifier que le serveur repond.
+      operationId: getHealth
+      security: []
+      responses:
+        '200':
+          description: Service disponible.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              examples:
+                ok:
+                  value:
+                    status: ok
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Creer un compte utilisateur.
+      operationId: registerUser
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthRegisterRequest'
+            examples:
+              example:
+                value:
+                  pseudo: alex
+                  email: alex@example.com
+                  password: StrongPassword123!
+      responses:
+        '201':
+          description: Compte cree et jetons emis.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+              examples:
+                success:
+                  value:
+                    user:
+                      id: 12
+                      pseudo: alex
+                      email: alex@example.com
+                      role: client
+                    token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                    refreshToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Connexion utilisateur.
+      operationId: loginUser
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthLoginRequest'
+            examples:
+              example:
+                value:
+                  email: alex@example.com
+                  password: StrongPassword123!
+      responses:
+        '200':
+          description: Authentification reussie.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+              examples:
+                success:
+                  value:
+                    user:
+                      id: 12
+                      pseudo: alex
+                      email: alex@example.com
+                      role: client
+                    token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                    refreshToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Renouveler les jetons JWT.
+      operationId: refreshAuthTokens
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthRefreshRequest'
+            examples:
+              example:
+                value:
+                  refreshToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+      responses:
+        '200':
+          description: Jetons renouveles.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoquer le refresh token courant.
+      operationId: logoutUser
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Deconnexion reussie.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              examples:
+                success:
+                  value:
+                    message: Déconnecté.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/profile:
+    get:
+      tags: [Profile]
+      summary: Obtenir le profil courant.
+      operationId: getProfile
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Profil courant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileResponse'
+              examples:
+                success:
+                  value:
+                    user:
+                      id: 12
+                      pseudo: alex
+                      email: alex@example.com
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    patch:
+      tags: [Profile]
+      summary: Mettre a jour le profil courant.
+      operationId: updateProfile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileUpdateRequest'
+            examples:
+              changePseudo:
+                value:
+                  pseudo: alex_dev
+              changePassword:
+                value:
+                  password: NewStrongPassword123!
+                  currentPassword: StrongPassword123!
+      responses:
+        '200':
+          description: Profil mis a jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      tags: [Profile]
+      summary: Supprimer le compte courant.
+      operationId: deleteProfile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileDeleteRequest'
+            examples:
+              example:
+                value:
+                  password: StrongPassword123!
+      responses:
+        '204':
+          description: Compte supprime.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/servers:
+    get:
+      tags: [Servers]
+      summary: Lister les serveurs accessibles au compte courant.
+      operationId: listServers
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Liste des serveurs.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServersListResponse'
+              examples:
+                success:
+                  value:
+                    servers:
+                      - id: 1
+                        name: General
+                        icon_url: null
+                        owner_id: 12
+                        created_at: '2026-08-01T10:00:00.000Z'
+                        channels:
+                          - id: 5
+                            name: général
+                            type: text
+                            server_id: 1
+                            created_at: '2026-08-01T10:00:01.000Z'
+                        members:
+                          - user_id: 12
+                            role: admin
+                        _count:
+                          members: 4
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags: [Servers]
+      summary: Creer un serveur.
+      operationId: createServer
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServerCreateRequest'
+            examples:
+              example:
+                value:
+                  name: Projet Produit
+                  icon_url: https://cdn.example.com/icons/server.png
+      responses:
+        '201':
+          description: Serveur cree.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServerCreateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/servers/{serverId}/channels:
+    post:
+      tags: [Servers]
+      summary: Ajouter un salon a un serveur.
+      operationId: createServerChannel
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ServerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChannelCreateRequest'
+            examples:
+              example:
+                value:
+                  name: support
+                  type: text
+      responses:
+        '201':
+          description: Salon cree.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelCreateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/servers/{serverId}/channels/{channelId}:
+    delete:
+      tags: [Servers]
+      summary: Supprimer un salon.
+      operationId: deleteServerChannel
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ServerId'
+        - $ref: '#/components/parameters/ChannelId'
+      responses:
+        '200':
+          description: Salon supprime.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              examples:
+                success:
+                  value:
+                    message: Salon supprimé
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/servers/{serverId}:
+    delete:
+      tags: [Servers]
+      summary: Supprimer un serveur.
+      operationId: deleteServer
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ServerId'
+      responses:
+        '200':
+          description: Serveur supprime.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              examples:
+                success:
+                  value:
+                    message: Serveur supprimé.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/channels/{channelId}/messages:
+    get:
+      tags: [Channels]
+      summary: Lister les messages d'un salon texte.
+      operationId: listChannelMessages
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ChannelId'
+        - name: limit
+          in: query
+          required: false
+          description: Nombre max de messages a renvoyer. Valeur par defaut 50, plafond 100.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: before
+          in: query
+          required: false
+          description: Filtrer les messages crees avant cette date ISO 8601.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Historique du salon.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelMessagesResponse'
+              examples:
+                success:
+                  value:
+                    messages:
+                      - id: 66b0b7d2f8d74c0012a8d111
+                        scope: channel
+                        authorId: 12
+                        content: Bonjour tout le monde
+                        attachments: []
+                        reactions: []
+                        createdAt: '2026-08-05T09:15:00.000Z'
+                        editedAt: null
+                        deletedAt: null
+                        deletedByAdmin: false
+                        channelId: 5
+                        author:
+                          id: 12
+                          pseudo: alex
+                          email: alex@example.com
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags: [Channels]
+      summary: Publier un message dans un salon texte.
+      operationId: createChannelMessage
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ChannelId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChannelMessageCreateRequest'
+            examples:
+              example:
+                value:
+                  content: Salut, le canal est pret.
+                  attachments: []
+      responses:
+        '201':
+          description: Message cree.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelMessageCreateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/channels/{channelId}/messages/{messageId}:
+    delete:
+      tags: [Channels]
+      summary: Supprimer un message de salon.
+      operationId: deleteChannelMessage
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ChannelId'
+        - $ref: '#/components/parameters/MessageId'
+      responses:
+        '200':
+          description: Message supprime ou masqué.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageDeletionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/channels/{channelId}/messages/{messageId}/delete:
+    post:
+      tags: [Channels]
+      summary: Alias HTTP POST pour supprimer un message de salon.
+      operationId: deleteChannelMessageAlias
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ChannelId'
+        - $ref: '#/components/parameters/MessageId'
+      responses:
+        '200':
+          description: Message supprime ou masqué.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageDeletionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/servers/{serverId}/members:
+    post:
+      tags: [Members]
+      summary: Ajouter un membre a un serveur.
+      operationId: addServerMember
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ServerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServerMemberCreateRequest'
+            examples:
+              example:
+                value:
+                  pseudo: marina
+      responses:
+        '201':
+          description: Membre ajoute.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServerMemberCreateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    get:
+      tags: [Members]
+      summary: Lister tous les membres d'un serveur.
+      operationId: listServerMembers
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ServerId'
+      responses:
+        '200':
+          description: Liste des membres.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServerMembersResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/servers/{serverId}/members/{userId}:
+    delete:
+      tags: [Members]
+      summary: Retirer un membre d'un serveur.
+      operationId: removeServerMember
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ServerId'
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Membre retire.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServerMemberRemovalResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/servers/{serverId}/members/{userId}/remove:
+    post:
+      tags: [Members]
+      summary: Alias HTTP POST pour retirer un membre d'un serveur.
+      operationId: removeServerMemberAlias
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ServerId'
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Membre retire.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServerMemberRemovalResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/conversations:
+    get:
+      tags: [Conversations]
+      summary: Lister les conversations privees du compte courant.
+      operationId: listConversations
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Conversations du compte.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationsListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags: [Conversations]
+      summary: Creer ou ouvrir une conversation privee.
+      operationId: createConversation
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConversationCreateRequest'
+            examples:
+              example:
+                value:
+                  pseudo: marina
+      responses:
+        '201':
+          description: Conversation creee ou recuperee.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationCreateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/conversations/{conversationId}/messages:
+    get:
+      tags: [Conversations]
+      summary: Lister les messages d'une conversation privee.
+      operationId: listConversationMessages
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+        - name: limit
+          in: query
+          required: false
+          description: Nombre max de messages a renvoyer. Valeur par defaut 50, plafond 100.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: before
+          in: query
+          required: false
+          description: Filtrer les messages crees avant cette date ISO 8601.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Historique prive.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationMessagesResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags: [Conversations]
+      summary: Envoyer un message prive.
+      operationId: createConversationMessage
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConversationMessageCreateRequest'
+            examples:
+              example:
+                value:
+                  content: Salut, tu es dispo ?
+                  attachments: []
+      responses:
+        '201':
+          description: Message prive cree.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationMessageCreateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/users/search:
+    get:
+      tags: [Users]
+      summary: Rechercher des utilisateurs par pseudo.
+      operationId: searchUsers
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Terme de recherche applique au pseudo.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Liste des utilisateurs correspondants.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSearchResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/users/status:
+    get:
+      tags: [Users]
+      summary: Lire le statut courant du compte.
+      operationId: getCurrentUserStatus
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Statut manuel et statut effectif.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserStatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    ServerId:
+      name: serverId
+      in: path
+      required: true
+      description: Identifiant numerique du serveur.
+      schema:
+        type: integer
+    ChannelId:
+      name: channelId
+      in: path
+      required: true
+      description: Identifiant numerique du salon.
+      schema:
+        type: integer
+    MessageId:
+      name: messageId
+      in: path
+      required: true
+      description: Identifiant MongoDB du message.
+      schema:
+        type: string
+    UserId:
+      name: userId
+      in: path
+      required: true
+      description: Identifiant numerique de l'utilisateur.
+      schema:
+        type: integer
+    ConversationId:
+      name: conversationId
+      in: path
+      required: true
+      description: Identifiant numerique de la conversation.
+      schema:
+        type: integer
+  responses:
+    BadRequest:
+      description: Requete invalide.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            example:
+              value:
+                message: Parametres invalides.
+    Unauthorized:
+      description: Authentification manquante ou invalide.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            example:
+              value:
+                message: Token requis.
+    Forbidden:
+      description: Authentifie mais non autorise.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            example:
+              value:
+                message: Accès refusé.
+    NotFound:
+      description: Ressource introuvable.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            example:
+              value:
+                message: Ressource introuvable.
+    Conflict:
+      description: Conflit sur la ressource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            example:
+              value:
+                message: Cet utilisateur est déjà membre du serveur.
+    ServerError:
+      description: Erreur serveur inattendue.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            example:
+              value:
+                message: Erreur serveur.
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required: [message]
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+      required: [status]
+    AuthRegisterRequest:
+      type: object
+      properties:
+        pseudo:
+          type: string
+          example: alex
+        email:
+          type: string
+          format: email
+          example: alex@example.com
+        password:
+          type: string
+          format: password
+          example: StrongPassword123!
+      required: [pseudo, email, password]
+    AuthLoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          example: alex@example.com
+        password:
+          type: string
+          format: password
+          example: StrongPassword123!
+      required: [email, password]
+    AuthRefreshRequest:
+      type: object
+      properties:
+        refreshToken:
+          type: string
+      required: [refreshToken]
+    AuthUser:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 12
+        pseudo:
+          type: string
+          example: alex
+        email:
+          type: string
+          format: email
+          example: alex@example.com
+        role:
+          $ref: '#/components/schemas/Role'
+      required: [id, pseudo, email, role]
+    AuthTokenResponse:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/AuthUser'
+        token:
+          type: string
+        refreshToken:
+          type: string
+      required: [user, token, refreshToken]
+    ProfileResponse:
+      type: object
+      properties:
+        user:
+          type: object
+          properties:
+            id:
+              type: integer
+            pseudo:
+              type: string
+            email:
+              type: string
+              format: email
+          required: [id, pseudo, email]
+      required: [user]
+    ProfileUpdateRequest:
+      type: object
+      properties:
+        pseudo:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+        currentPassword:
+          type: string
+          format: password
+      additionalProperties: false
+    ProfileDeleteRequest:
+      type: object
+      properties:
+        password:
+          type: string
+          format: password
+      required: [password]
+    Role:
+      type: string
+      enum: [admin, client]
+    ChannelType:
+      type: string
+      enum: [text, voice]
+    ServerMemberRole:
+      type: string
+      enum: [admin, member]
+    StatusValue:
+      type: string
+      enum: [online, away, dnd, offline]
+    Server:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: General
+        icon_url:
+          type: string
+          nullable: true
+          example: null
+        owner_id:
+          type: integer
+          example: 12
+        created_at:
+          type: string
+          format: date-time
+      required: [id, name, icon_url, owner_id, created_at]
+    Channel:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        type:
+          $ref: '#/components/schemas/ChannelType'
+        server_id:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+      required: [id, name, type, server_id, created_at]
+    ServerMember:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        server_id:
+          type: integer
+        role:
+          $ref: '#/components/schemas/ServerMemberRole'
+        joined_at:
+          type: string
+          format: date-time
+        user:
+          type: object
+          properties:
+            id:
+              type: integer
+            pseudo:
+              type: string
+            email:
+              type: string
+              format: email
+          required: [id, pseudo, email]
+      required: [user_id, server_id, role, joined_at]
+    ServerListItem:
+      allOf:
+        - $ref: '#/components/schemas/Server'
+        - type: object
+          properties:
+            channels:
+              type: array
+              items:
+                $ref: '#/components/schemas/Channel'
+            members:
+              type: array
+              items:
+                type: object
+                properties:
+                  user_id:
+                    type: integer
+                  role:
+                    $ref: '#/components/schemas/ServerMemberRole'
+                required: [user_id, role]
+            _count:
+              type: object
+              properties:
+                members:
+                  type: integer
+              required: [members]
+    ServersListResponse:
+      type: object
+      properties:
+        servers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServerListItem'
+      required: [servers]
+    ServerCreateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Projet Produit
+        icon_url:
+          type: string
+          nullable: true
+          example: https://cdn.example.com/icons/server.png
+      required: [name]
+    ServerCreateResponse:
+      type: object
+      properties:
+        server:
+          type: object
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+            icon_url:
+              type: string
+              nullable: true
+            owner_id:
+              type: integer
+            created_at:
+              type: string
+              format: date-time
+            channels:
+              type: array
+              items:
+                $ref: '#/components/schemas/Channel'
+          required: [id, name, icon_url, owner_id, created_at, channels]
+      required: [server]
+    ChannelCreateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          example: support
+        type:
+          $ref: '#/components/schemas/ChannelType'
+      required: [name]
+    ChannelCreateResponse:
+      type: object
+      properties:
+        channel:
+          $ref: '#/components/schemas/Channel'
+      required: [channel]
+    MessageAttachment:
+      type: object
+      description: Objet libre pour les pieces jointes. Le code actuel accepte un tableau sans schema strict.
+      additionalProperties: true
+    MessageReaction:
+      type: object
+      description: Objet libre pour les reactions. Le code actuel accepte un tableau sans schema strict.
+      additionalProperties: true
+    MessageAuthor:
+      type: object
+      properties:
+        id:
+          type: integer
+        pseudo:
+          type: string
+        email:
+          type: string
+          format: email
+          nullable: true
+      required: [id, pseudo]
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+          example: 66b0b7d2f8d74c0012a8d111
+        scope:
+          type: string
+          enum: [channel, dm]
+        authorId:
+          type: integer
+        content:
+          type: string
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/MessageAttachment'
+        reactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/MessageReaction'
+        createdAt:
+          type: string
+          format: date-time
+        editedAt:
+          type: string
+          format: date-time
+          nullable: true
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
+        deletedByAdmin:
+          type: boolean
+        channelId:
+          type: integer
+          nullable: true
+        conversationId:
+          type: integer
+          nullable: true
+        author:
+          allOf:
+            - $ref: '#/components/schemas/MessageAuthor'
+          nullable: true
+      required: [id, scope, authorId, content, attachments, reactions, createdAt, editedAt, deletedAt, deletedByAdmin]
+    ChannelMessageCreateRequest:
+      type: object
+      properties:
+        content:
+          type: string
+          example: Salut, le canal est pret.
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/MessageAttachment'
+          default: []
+      required: [content]
+    ConversationMessageCreateRequest:
+      type: object
+      properties:
+        content:
+          type: string
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/MessageAttachment'
+          default: []
+      required: [content]
+    ChannelMessagesResponse:
+      type: object
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+      required: [messages]
+    ChannelMessageCreateResponse:
+      type: object
+      properties:
+        message:
+          $ref: '#/components/schemas/Message'
+      required: [message]
+    MessageDeletionResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        message:
+          $ref: '#/components/schemas/Message'
+      required: [ok, message]
+    ServerMemberCreateRequest:
+      type: object
+      properties:
+        pseudo:
+          type: string
+          example: marina
+      required: [pseudo]
+    ServerMemberCreateResponse:
+      type: object
+      properties:
+        member:
+          $ref: '#/components/schemas/ServerMember'
+      required: [member]
+    ServerMembersResponse:
+      type: object
+      properties:
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServerMember'
+      required: [members]
+    ServerMemberRemovalResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        userId:
+          type: integer
+      required: [ok, userId]
+    ConversationUserView:
+      type: object
+      properties:
+        id:
+          type: integer
+        pseudo:
+          type: string
+        email:
+          type: string
+          format: email
+        status:
+          $ref: '#/components/schemas/StatusValue'
+      required: [id, pseudo, email, status]
+    ConversationListItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        user:
+          $ref: '#/components/schemas/ConversationUserView'
+      required: [id, createdAt, user]
+    ConversationsListResponse:
+      type: object
+      properties:
+        conversations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationListItem'
+      required: [conversations]
+    ConversationCreateRequest:
+      type: object
+      properties:
+        pseudo:
+          type: string
+          example: marina
+      required: [pseudo]
+    ConversationCreateResponse:
+      type: object
+      properties:
+        conversation:
+          $ref: '#/components/schemas/ConversationListItem'
+      required: [conversation]
+    ConversationMessagesResponse:
+      type: object
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+      required: [messages]
+    ConversationMessageCreateResponse:
+      type: object
+      properties:
+        message:
+          $ref: '#/components/schemas/Message'
+      required: [message]
+    UserSearchResult:
+      type: object
+      properties:
+        id:
+          type: integer
+        pseudo:
+          type: string
+        status:
+          $ref: '#/components/schemas/StatusValue'
+      required: [id, pseudo, status]
+    UserSearchResponse:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserSearchResult'
+      required: [users]
+    UserStatusResponse:
+      type: object
+      properties:
+        manualStatus:
+          $ref: '#/components/schemas/StatusValue'
+        status:
+          $ref: '#/components/schemas/StatusValue'
+      required: [manualStatus, status]
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required: [message]
