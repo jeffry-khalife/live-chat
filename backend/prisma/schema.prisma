@@ -4,19 +4,21 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url = env("DATABASE_URL")
+  url      = env("DATABASE_URL")
 }
 
 model User {
-  id             Int            @id @default(autoincrement())
-  pseudo         String         @unique
-  email          String         @unique
-  password       String
-  role           Role           @default(client)
+  id                      Int            @id @default(autoincrement())
+  pseudo                  String         @unique
+  email                   String         @unique
+  password                String
+  role                    Role           @default(client)
   refresh_token  String?
-  created_at     DateTime       @default(now())
-  owned_servers  Server[]       @relation("OwnedServers")
-  memberships    ServerMember[]
+  created_at              DateTime       @default(now())
+  owned_servers           Server[]       @relation("OwnedServers")
+  memberships             ServerMember[]
+  conversations_as_first  Conversation[] @relation("ConversationUserOne")
+  conversations_as_second Conversation[] @relation("ConversationUserTwo")
 
   @@map("users")
 }
@@ -55,6 +57,18 @@ model ServerMember {
 
   @@id([user_id, server_id])
   @@map("server_members")
+}
+
+model Conversation {
+  id           Int      @id @default(autoincrement())
+  user_one_id  Int
+  user_two_id  Int
+  created_at   DateTime @default(now())
+  userOne      User     @relation("ConversationUserOne", fields: [user_one_id], references: [id])
+  userTwo      User     @relation("ConversationUserTwo", fields: [user_two_id], references: [id])
+
+  @@unique([user_one_id, user_two_id])
+  @@map("conversations")
 }
 
 enum Role {
