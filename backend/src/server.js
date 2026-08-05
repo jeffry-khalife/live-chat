@@ -43,7 +43,7 @@ app.get('/debug/db-check', async (req, res) => {
             "SELECT to_regclass('public.conversations') IS NOT NULL AS exists",
         );
         const migrations = await prisma.$queryRawUnsafe(
-            'SELECT migration_name, finished_at, rolled_back_at FROM "_prisma_migrations" ORDER BY finished_at ASC',
+            'SELECT id, migration_name, started_at, finished_at, applied_steps_count, rolled_back_at, logs FROM "_prisma_migrations" ORDER BY started_at ASC',
         );
         res.json({ conversationsTableExists: tableExists[0]?.exists, migrations });
     } catch (error) {
