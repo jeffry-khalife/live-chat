@@ -5,6 +5,29 @@ const auth = require('../middlewares/auth.js');
 
 const router = express.Router();
 
+async function canManageServerChannels(serverId, user) {
+	const server = await prisma.server.findUnique({
+		where: { id: serverId },
+		include: {
+			members: {
+				where: { user_id: user.id },
+				select: { role: true },
+			},
+		},
+	});
+
+	if (!server) {
+		return { server: null, allowed: false };
+	}
+
+	if (user.role === 'admin' || server.owner_id === user.id) {
+		return { server, allowed: true };
+	}
+
+	const allowed = server.members[0]?.role === 'admin';
+	return { server, allowed };
+}
+
 // Lister tous les serveurs (filtrés par utilisateur si non-admin)
 router.get('/', auth, async (req, res) => {
 	try {
@@ -82,12 +105,9 @@ router.post('/:id/channels', auth, async (req, res) => {
 	}
 
 	try {
-		const server = await prisma.server.findUnique({ where: { id: serverId } });
+		const { server, allowed } = await canManageServerChannels(serverId, req.user);
 		if (!server) return res.status(404).json({ message: 'Serveur introuvable.' });
-
-		if (req.user.role !== 'admin' && server.owner_id !== req.user.id) {
-			return res.status(403).json({ message: 'Accès refusé.' });
-		}
+		if (!allowed) return res.status(403).json({ message: 'Accès refusé.' });
 
 		const channel = await prisma.channel.create({
 			data: { name: name.trim(), type: type || 'text', server_id: serverId },
@@ -116,10 +136,7 @@ router.delete('/:serverId/channels/:channelId', auth, async (req, res) => {
 	}
 
 	try {
-		const server = await prisma.server.findUnique({
-			where: { id: serverId },
-			select: { id: true, owner_id: true },
-		});
+		const { server, allowed } = await canManageServerChannels(serverId, req.user);
 
 		if (!server) {
 			return res.status(404).json({ message: 'Serveur introuvable.' });
@@ -134,7 +151,7 @@ router.delete('/:serverId/channels/:channelId', auth, async (req, res) => {
 			return res.status(404).json({ message: 'Salon introuvable.' });
 		}
 
-		if (req.user.role !== 'admin' && server.owner_id !== req.user.id) {
+		if (!allowed) {
 			return res.status(403).json({ message: 'Accès refusé.' });
 		}
 

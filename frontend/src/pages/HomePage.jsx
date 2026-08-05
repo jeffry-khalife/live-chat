@@ -89,32 +89,6 @@ function canManageSelectedServer(server, currentUser) {
     return server.members?.[0]?.role === 'admin';
 }
 
-function MessageItem({ message, currentUser }) {
-    if (Number(message.authorId) === Number(currentUser?.id)) {
-        return (
-            <div className="msg-group msg-sent">
-                <div className="msg-bubble-list">
-                    <div className="msg-bubble">{message.content}</div>
-                </div>
-                <div className="msg-sent-time">{formatMessageTime(message.createdAt)}</div>
-            </div>
-        );
-    }
-
-    return (
-        <div className="msg-group msg-received">
-            <div className="msg-group-header">
-                <Avatar name={message.author?.pseudo ?? getMessageAuthor(message, currentUser)} size={28} />
-                <span className="msg-sender">{getMessageAuthor(message, currentUser)}</span>
-                <span className="msg-group-time">{formatMessageTime(message.createdAt)}</span>
-            </div>
-            <div className="msg-bubble-list">
-                <div className="msg-bubble">{message.content}</div>
-            </div>
-        </div>
-    );
-}
-
 function getTypingLabel(typingUsers) {
     if (typingUsers.length === 0) {
         return '';
@@ -194,7 +168,7 @@ function HomePage() {
         if (!selected) return;
         const voiceChannelIds = selected.channels.filter((c) => c.type === 'voice').map((c) => c.id);
         queryVoicePresence(voiceChannelIds);
-    }, [selectedId, queryVoicePresence]);
+    }, [selected, queryVoicePresence]);
 
     useEffect(() => {
         function handleResize() {
@@ -497,7 +471,7 @@ function HomePage() {
             socket.off('server:channel-deleted');
             socket.off('server:presence-updated');
         };
-    }, [activeChannelId, selectedId, socket, user?.id, user?.pseudo]);
+    }, [activeChannelId, selectedId, socket, user?.id, user?.pseudo, setServers]);
 
     useEffect(() => () => {
         clearTimeout(typingTimeoutRef.current);
@@ -692,7 +666,7 @@ function HomePage() {
             setShowNewDmModal(true);
             navigate(location.pathname, { replace: true, state: {} });
         }
-    }, [location.state, servers, conversations]);
+    }, [location.state, location.pathname, servers, conversations, navigate]);
 
     function closeNewDmModal() {
         setShowNewDmModal(false);

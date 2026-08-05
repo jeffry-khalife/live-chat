@@ -73,6 +73,14 @@ router.get('/', auth, async (req, res) => {
 	const serverId = parseInt(req.params.serverId);
 
 	try {
+		const server = await loadServerWithMembership(serverId, req.user.id);
+		if (!server) return res.status(404).json({ message: 'Serveur introuvable.' });
+
+		const isMember = server.owner_id === req.user.id || server.members.length > 0;
+		if (req.user.role !== 'admin' && !isMember) {
+			return res.status(403).json({ message: 'Accès refusé.' });
+		}
+
 		const members = await prisma.serverMember.findMany({
 			where: { server_id: serverId },
 			include: { user: { select: { id: true, pseudo: true, email: true } } },
