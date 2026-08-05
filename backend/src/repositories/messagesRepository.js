@@ -1,61 +1,61 @@
-const crypto = require('crypto');
-
-// In-memory message store: no external DB required, but history is lost on
-// backend restart/redeploy and isn't shared across multiple instances.
-const messagesByRoom = new Map(); // `${scope}:${roomId}` -> message[]
-const messagesById = new Map(); // id -> message
-
-function roomKey(scope, roomId) {
-    return `${scope}:${roomId}`;
-}
+// In-memory message store: no external database needed, but messages are
+// lost when the server restarts, and are not shared if there are several
+// server instances.
+let nextMessageId = 1;
+let allMessages = [];
 
 function normalizeMessage(message) {
     if (!message) {
         return null;
     }
 
-    const base = {
+    const result = {
         id: message.id,
         scope: message.scope,
         authorId: Number(message.authorId),
         content: message.content,
-        attachments: message.attachments ?? [],
-        reactions: message.reactions ?? [],
+        attachments: message.attachments,
+        reactions: message.reactions,
         createdAt: message.createdAt,
-        editedAt: message.editedAt ?? null,
-        deletedAt: message.deletedAt ?? null,
-        deletedByAdmin: Boolean(message.deletedByAdmin),
+        editedAt: message.editedAt,
+        deletedAt: message.deletedAt,
+        deletedByAdmin: message.deletedByAdmin,
     };
 
     if (message.scope === 'dm') {
-        return { ...base, conversationId: Number(message.roomId) };
+        result.conversationId = Number(message.roomId);
+    } else {
+        result.channelId = Number(message.roomId);
     }
 
-    return { ...base, channelId: Number(message.roomId) };
+    return result;
 }
 
 async function findByRoom(scope, roomId, options = {}) {
-    const { limit = 50, before } = options;
-    const key = roomKey(scope, roomId);
-    let messages = messagesByRoom.get(key) ?? [];
+    const limit = options.limit || 50;
+    const before = options.before;
+
+    let messages = allMessages.filter((message) => {
+        return message.scope === scope && message.roomId === String(roomId);
+    });
 
     if (before) {
         const beforeDate = new Date(before);
         messages = messages.filter((message) => message.createdAt < beforeDate);
     }
 
-    return messages.slice(-limit).map(normalizeMessage);
+    const lastMessages = messages.slice(-limit);
+    return lastMessages.map(normalizeMessage);
 }
 
 async function createMessage({ roomId, scope, authorId, content, attachments }) {
-    const key = roomKey(scope, roomId);
     const message = {
-        id: crypto.randomUUID(),
+        id: String(nextMessageId),
         roomId: String(roomId),
         scope,
         authorId: String(authorId),
-        content,
-        attachments: Array.isArray(attachments) ? attachments : [],
+        content: content,
+        attachments: attachments || [],
         reactions: [],
         createdAt: new Date(),
         editedAt: null,
@@ -63,10 +63,8 @@ async function createMessage({ roomId, scope, authorId, content, attachments }) 
         deletedByAdmin: false,
     };
 
-    const roomMessages = messagesByRoom.get(key) ?? [];
-    roomMessages.push(message);
-    messagesByRoom.set(key, roomMessages);
-    messagesById.set(message.id, message);
+    nextMessageId = nextMessageId + 1;
+    allMessages.push(message);
 
     return normalizeMessage(message);
 }
@@ -76,7 +74,13 @@ async function findByChannelId(channelId, options = {}) {
 }
 
 async function create({ channelId, scope, authorId, content, attachments }) {
-    return createMessage({ roomId: channelId, scope: scope ?? 'channel', authorId, content, attachments });
+    return createMessage({
+        roomId: channelId,
+        scope: scope || 'channel',
+        authorId: authorId,
+        content: content,
+        attachments: attachments,
+    });
 }
 
 async function findByConversationId(conversationId, options = {}) {
@@ -84,52 +88,78 @@ async function findByConversationId(conversationId, options = {}) {
 }
 
 async function createDmMessage({ conversationId, authorId, content, attachments }) {
-    return createMessage({ roomId: conversationId, scope: 'dm', authorId, content, attachments });
+    return createMessage({
+        roomId: conversationId,
+        scope: 'dm',
+        authorId: authorId,
+        content: content,
+        attachments: attachments,
+    });
+}
+
+function findMessageById(messageId) {
+    for (let i = 0; i < allMessages.length; i++) {
+        if (allMessages[i].id === messageId) {
+            return allMessages[i];
+        }
+    }
+    return null;
 }
 
 async function findById(messageId) {
-    return normalizeMessage(messagesById.get(messageId));
+    const message = findMessageById(messageId);
+    return normalizeMessage(message);
 }
 
 async function deleteById(messageId) {
-    const message = messagesById.get(messageId);
+    const message = findMessageById(messageId);
 
     if (!message) {
         return null;
     }
 
-    const key = roomKey(message.scope, message.roomId);
-    const roomMessages = messagesByRoom.get(key) ?? [];
-    messagesByRoom.set(key, roomMessages.filter((existing) => existing.id !== messageId));
-    messagesById.delete(messageId);
+    allMessages = allMessages.filter((existing) => existing.id !== messageId);
 
     return normalizeMessage(message);
 }
 
-function applySoftDelete(messageId, content, deletedByAdmin) {
-    const message = messagesById.get(messageId);
+async function softDeleteByAdmin(messageId) {
+    const message = findMessageById(messageId);
 
     if (!message) {
         return null;
     }
 
-    message.content = content;
+    message.content = 'Message supprimé par l\'administrateur.';
     message.editedAt = new Date();
     message.deletedAt = new Date();
-    message.deletedByAdmin = deletedByAdmin;
+    message.deletedByAdmin = true;
     message.attachments = [];
     message.reactions = [];
 
     return normalizeMessage(message);
 }
 
-async function softDeleteByAdmin(messageId) {
-    return applySoftDelete(messageId, 'Message supprimé par l\'administrateur.', true);
-}
-
 async function softDeleteByAuthor(messageId, pseudo) {
-    const safePseudo = pseudo?.trim() || 'Utilisateur';
-    return applySoftDelete(messageId, `${safePseudo} a supprimé son message.`, false);
+    const message = findMessageById(messageId);
+
+    if (!message) {
+        return null;
+    }
+
+    let safePseudo = pseudo;
+    if (!safePseudo || !safePseudo.trim()) {
+        safePseudo = 'Utilisateur';
+    }
+
+    message.content = safePseudo + ' a supprimé son message.';
+    message.editedAt = new Date();
+    message.deletedAt = new Date();
+    message.deletedByAdmin = false;
+    message.attachments = [];
+    message.reactions = [];
+
+    return normalizeMessage(message);
 }
 
 module.exports = {
