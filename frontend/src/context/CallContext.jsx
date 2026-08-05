@@ -40,6 +40,8 @@ export function CallProvider({ children }) {
     const [micOn, setMicOn] = useState(true);
     const [cameraOn, setCameraOn] = useState(true);
     const [error, setError] = useState(null);
+    const [voiceChannelMembers, setVoiceChannelMembers] = useState({}); // channelId -> [{ id, pseudo }]
+    const [activeVoiceChannelId, setActiveVoiceChannelId] = useState(null);
 
     const callStateRef = useRef('idle');
     const pcsRef = useRef(new Map()); // userId -> RTCPeerConnection
@@ -84,6 +86,7 @@ export function CallProvider({ children }) {
         callIdRef.current = null;
         setMicOn(true);
         setCameraOn(true);
+        setActiveVoiceChannelId(null);
         updateCallState('idle');
     }, [updateCallState]);
 
@@ -142,10 +145,43 @@ export function CallProvider({ children }) {
 
     const hangUp = useCallback(() => {
         if (socket && callIdRef.current) {
-            socket.emit('call:hangup', { callId: callIdRef.current });
+            if (activeVoiceChannelId != null) {
+                socket.emit('voice:leave', { channelId: activeVoiceChannelId });
+            } else {
+                socket.emit('call:hangup', { callId: callIdRef.current });
+            }
         }
         cleanup();
-    }, [socket, cleanup]);
+    }, [socket, cleanup, activeVoiceChannelId]);
+
+    const joinVoiceChannel = useCallback(async (channelId) => {
+        if (!socket || callStateRef.current !== 'idle') return;
+
+        callIdRef.current = `voice:${channelId}`;
+        setActiveVoiceChannelId(channelId);
+        setCameraOn(false);
+        updateCallState('in-call');
+        setError(null);
+
+        try {
+            const stream = await getLocalMedia(false);
+            socket.emit('voice:join', { channelId, pseudo: user?.pseudo }, (response) => {
+                if (!response?.ok) {
+                    setError(response?.message || 'Impossible de rejoindre le salon vocal.');
+                    cleanup();
+                    return;
+                }
+
+                response.participants.forEach((p) => {
+                    upsertParticipant(p.id, { pseudo: p.pseudo });
+                    connectToParticipant(p.id, response.callId, stream);
+                });
+            });
+        } catch {
+            setError('Impossible d\'accéder au micro.');
+            cleanup();
+        }
+    }, [socket, user, getLocalMedia, upsertParticipant, connectToParticipant, cleanup, updateCallState]);
 
     const startCall = useCallback(async (targetUser, video = true) => {
         if (!socket || !targetUser?.id || callStateRef.current !== 'idle') return;
@@ -261,6 +297,26 @@ export function CallProvider({ children }) {
     useEffect(() => {
         if (!socket) return undefined;
 
+        function onVoicePresence({ channelId, participants: members }) {
+            setVoiceChannelMembers((current) => ({ ...current, [channelId]: members }));
+        }
+
+        socket.on('voice:presence', onVoicePresence);
+        return () => socket.off('voice:presence', onVoicePresence);
+    }, [socket]);
+
+    const queryVoicePresence = useCallback((channelIds) => {
+        if (!socket || !channelIds?.length) return;
+
+        socket.emit('voice:query', { channelIds }, (response) => {
+            if (!response?.ok) return;
+            setVoiceChannelMembers((current) => ({ ...current, ...response.presence }));
+        });
+    }, [socket]);
+
+    useEffect(() => {
+        if (!socket) return undefined;
+
         function onIncoming(payload) {
             if (callStateRef.current === 'idle') {
                 setIncomingCall(payload);
@@ -362,6 +418,13 @@ export function CallProvider({ children }) {
             }
         }
 
+        function onVoiceParticipantJoined({ callId, user: joinedUser }) {
+            if (callId !== callIdRef.current) return;
+            // The joiner initiates the offer to us — we just track them for the UI.
+            upsertParticipant(joinedUser.id, { pseudo: joinedUser.pseudo });
+        }
+
+        socket.on('voice:participant-joined', onVoiceParticipantJoined);
         socket.on('call:incoming', onIncoming);
         socket.on('call:declined', onDeclined);
         socket.on('call:hangup', onHangup);
@@ -373,6 +436,7 @@ export function CallProvider({ children }) {
         socket.on('webrtc:ice-candidate', onIceCandidate);
 
         return () => {
+            socket.off('voice:participant-joined', onVoiceParticipantJoined);
             socket.off('call:incoming', onIncoming);
             socket.off('call:declined', onDeclined);
             socket.off('call:hangup', onHangup);
@@ -402,6 +466,10 @@ export function CallProvider({ children }) {
                 hangUp,
                 toggleMic,
                 toggleCamera,
+                voiceChannelMembers,
+                activeVoiceChannelId,
+                joinVoiceChannel,
+                queryVoicePresence,
             }}
         >
             {children}

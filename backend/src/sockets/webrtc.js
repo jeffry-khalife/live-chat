@@ -1,8 +1,14 @@
 const jwt = require('jsonwebtoken');
+const prisma = require('../config/sql.js');
 
 const userSockets = new Map(); // userId -> Set<socketId>
 const rooms = new Map(); // callId -> Map<userId, pseudo>
 const userRooms = new Map(); // userId -> Set<callId>
+const socketVoiceChannel = new Map(); // socketId -> channelId
+
+function voiceCallId(channelId) {
+    return `voice:${channelId}`;
+}
 
 function addUserSocket(userId, socketId) {
     if (!userSockets.has(userId)) {
@@ -121,6 +127,89 @@ function registerWebrtcSocket(io) {
             }
         });
 
+        // Voice channels: no invite/accept — joining is immediate, like Discord.
+        socket.on('voice:join', async ({ channelId, pseudo } = {}, ack) => {
+            const parsedChannelId = Number.parseInt(channelId, 10);
+            if (Number.isNaN(parsedChannelId)) {
+                if (ack) ack({ ok: false, message: 'Salon invalide.' });
+                return;
+            }
+
+            const channel = await prisma.channel.findUnique({
+                where: { id: parsedChannelId },
+                include: { server: { include: { members: true } } },
+            });
+
+            if (!channel || channel.type !== 'voice') {
+                if (ack) ack({ ok: false, message: 'Salon vocal introuvable.' });
+                return;
+            }
+
+            const hasAccess = channel.server.owner_id === userId
+                || channel.server.members.some((member) => member.user_id === userId);
+
+            if (!hasAccess) {
+                if (ack) ack({ ok: false, message: 'Accès refusé.' });
+                return;
+            }
+
+            const callId = voiceCallId(parsedChannelId);
+            const existingParticipants = roomParticipants(callId, userId);
+            joinRoom(callId, userId, pseudo);
+            socketVoiceChannel.set(socket.id, parsedChannelId);
+
+            if (ack) ack({ ok: true, callId, participants: existingParticipants });
+
+            for (const participant of existingParticipants) {
+                relayTo(participant.id, 'voice:participant-joined', {
+                    callId,
+                    channelId: parsedChannelId,
+                    user: { id: userId, pseudo },
+                });
+            }
+
+            io.to(`server:${channel.server_id}`).emit('voice:presence', {
+                channelId: parsedChannelId,
+                participants: roomParticipants(callId, null),
+            });
+        });
+
+        socket.on('voice:query', ({ channelIds } = {}, ack) => {
+            if (!Array.isArray(channelIds)) {
+                if (ack) ack({ ok: false });
+                return;
+            }
+
+            const presence = channelIds.reduce((accumulator, channelId) => {
+                const parsedChannelId = Number.parseInt(channelId, 10);
+                if (!Number.isNaN(parsedChannelId)) {
+                    accumulator[parsedChannelId] = roomParticipants(voiceCallId(parsedChannelId), null);
+                }
+                return accumulator;
+            }, {});
+
+            if (ack) ack({ ok: true, presence });
+        });
+
+        socket.on('voice:leave', async ({ channelId } = {}) => {
+            const parsedChannelId = Number.parseInt(channelId, 10);
+            if (Number.isNaN(parsedChannelId)) return;
+
+            const callId = voiceCallId(parsedChannelId);
+            leaveRoom(callId, userId);
+            socketVoiceChannel.delete(socket.id);
+
+            broadcastToRoom(callId, userId, 'call:participant-left', { callId, userId });
+
+            const channel = await prisma.channel.findUnique({ where: { id: parsedChannelId }, select: { server_id: true } });
+            if (channel) {
+                io.to(`server:${channel.server_id}`).emit('voice:presence', {
+                    channelId: parsedChannelId,
+                    participants: roomParticipants(callId, null),
+                });
+            }
+        });
+
         socket.on('call:accept', ({ callId, fromUser } = {}) => {
             if (!callId) return;
 
@@ -161,14 +250,26 @@ function registerWebrtcSocket(io) {
             relayTo(toUserId, 'webrtc:ice-candidate', { callId, fromUserId: userId, candidate });
         });
 
-        socket.on('disconnect', () => {
+        socket.on('disconnect', async () => {
             removeUserSocket(userId, socket.id);
+            socketVoiceChannel.delete(socket.id);
 
             const callIds = userRooms.get(userId);
             if (callIds) {
                 for (const callId of [...callIds]) {
                     broadcastToRoom(callId, userId, 'call:participant-left', { callId, userId });
                     leaveRoom(callId, userId);
+
+                    if (callId.startsWith('voice:')) {
+                        const channelId = Number.parseInt(callId.slice('voice:'.length), 10);
+                        const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { server_id: true } });
+                        if (channel) {
+                            io.to(`server:${channel.server_id}`).emit('voice:presence', {
+                                channelId,
+                                participants: roomParticipants(callId, null),
+                            });
+                        }
+                    }
                 }
             }
         });

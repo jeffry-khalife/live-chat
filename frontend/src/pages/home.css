@@ -152,6 +152,25 @@
 
 .cs-channel-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+.cs-channel-active { background: var(--bg-elevated); color: var(--success, #22c55e); }
+
+.cs-voice-group { display: flex; flex-direction: column; }
+
+.cs-voice-members {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 2px 8px 6px 34px;
+}
+
+.cs-voice-member {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-subtle);
+}
+
 .cs-channel-actions {
     display: none;
     gap: 4px;

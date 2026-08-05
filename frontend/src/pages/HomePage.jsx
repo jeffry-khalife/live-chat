@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useChatData } from '../context/ChatDataContext.jsx';
+import { useCall } from '../context/CallContext.jsx';
 import OnlineUsers from '../components/OnlineUsers.jsx';
 import Sidebar from '../components/Sidebar.jsx';
 import Header from '../components/Header.jsx';
@@ -143,6 +144,7 @@ function HomePage() {
     const location = useLocation();
     const socket = useSocket();
     const { servers, setServers, conversations, setConversations, serverError, statuses } = useChatData();
+    const { voiceChannelMembers, activeVoiceChannelId, joinVoiceChannel, hangUp, callState, queryVoicePresence } = useCall();
     const [selected, setSelected] = useState(null); // server object
     const [messages, setMessages] = useState([]);
     const [draft, setDraft] = useState('');
@@ -187,6 +189,12 @@ function HomePage() {
         setSelected(firstServer);
         setActiveChannel(getDefaultChannel(firstServer));
     }, [servers, selected]);
+
+    useEffect(() => {
+        if (!selected) return;
+        const voiceChannelIds = selected.channels.filter((c) => c.type === 'voice').map((c) => c.id);
+        queryVoicePresence(voiceChannelIds);
+    }, [selectedId, queryVoicePresence]);
 
     useEffect(() => {
         function handleResize() {
@@ -1121,14 +1129,40 @@ function HomePage() {
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                             </button>
                         </div>
-                        {selected.channels.filter((c) => c.type === 'voice').map((c) => (
-                            <div key={c.id} className="cs-channel">
-                                <svg className="cs-voice-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
-                                </svg>
-                                <span className="cs-channel-name">{c.name}</span>
-                            </div>
-                        ))}
+                        {selected.channels.filter((c) => c.type === 'voice').map((c) => {
+                            const members = voiceChannelMembers[c.id] ?? [];
+                            const isActive = activeVoiceChannelId === c.id;
+
+                            return (
+                                <div key={c.id} className="cs-voice-group">
+                                    <div
+                                        className={`cs-channel${isActive ? ' cs-channel-active' : ''}`}
+                                        onClick={() => {
+                                            if (isActive) {
+                                                hangUp();
+                                            } else if (callState === 'idle') {
+                                                joinVoiceChannel(c.id);
+                                            }
+                                        }}
+                                    >
+                                        <svg className="cs-voice-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
+                                        </svg>
+                                        <span className="cs-channel-name">{c.name}</span>
+                                    </div>
+                                    {members.length > 0 && (
+                                        <div className="cs-voice-members">
+                                            {members.map((member) => (
+                                                <div key={member.id} className="cs-voice-member">
+                                                    <Avatar name={member.pseudo} size={20} />
+                                                    <span>{member.pseudo}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
                 </aside>
             )}
