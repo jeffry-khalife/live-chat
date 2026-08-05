@@ -211,6 +211,7 @@ function registerChatSocket(io) {
                 if (ack) ack(response);
                 socket.emit('chat:joined', response);
             } catch (error) {
+                console.error('Socket handler error:', error);
                 const response = { ok: false, message: error.message || 'Erreur serveur.' };
                 if (ack) ack(response);
             }
@@ -315,6 +316,7 @@ function registerChatSocket(io) {
                 const response = { ok: true, message: enrichedMessage };
                 if (ack) ack(response);
             } catch (error) {
+                console.error('Socket handler error:', error);
                 const response = { ok: false, message: error.message || 'Erreur serveur.' };
                 if (ack) ack(response);
             }
@@ -360,6 +362,7 @@ function registerChatSocket(io) {
                 if (ack) ack(response);
                 socket.emit('dm:joined', response);
             } catch (error) {
+                console.error('Socket handler error:', error);
                 const response = { ok: false, message: error.message || 'Erreur serveur.' };
                 if (ack) ack(response);
             }
@@ -409,6 +412,7 @@ function registerChatSocket(io) {
                 const response = { ok: true, message: enrichedMessage };
                 if (ack) ack(response);
             } catch (error) {
+                console.error('Socket handler error:', error);
                 const response = { ok: false, message: error.message || 'Erreur serveur.' };
                 if (ack) ack(response);
             }
@@ -438,6 +442,7 @@ function registerChatSocket(io) {
                 const response = { ok: true, manualStatus, status: effectiveStatus };
                 if (ack) ack(response);
             } catch (error) {
+                console.error('Socket handler error:', error);
                 const response = { ok: false, message: error.message || 'Erreur serveur.' };
                 if (ack) ack(response);
             }
