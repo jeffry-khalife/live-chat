@@ -132,6 +132,10 @@ function getTypingLabel(typingUsers) {
     return `${names}${suffix} ${verb} en train d'écrire...`;
 }
 
+function isMobileViewport() {
+    return typeof window !== 'undefined' && window.innerWidth <= 768;
+}
+
 function HomePage() {
     const { user, token } = useAuth();
     const navigate = useNavigate();
@@ -151,6 +155,7 @@ function HomePage() {
     const [channelName, setChannelName] = useState('');
     const [channelType, setChannelType] = useState('text');
     const [creatingChannel, setCreatingChannel] = useState(false);
+    const [isChannelsSidebarOpen, setIsChannelsSidebarOpen] = useState(true);
     const [loadingMessages, setLoadingMessages] = useState(false);
     const [unreadCounts, setUnreadCounts] = useState({});
     const [typingUsers, setTypingUsers] = useState([]);
@@ -181,6 +186,19 @@ function HomePage() {
         setSelected(firstServer);
         setActiveChannel(getDefaultChannel(firstServer));
     }, [servers, selected]);
+
+    useEffect(() => {
+        function handleResize() {
+            if (!isMobileViewport()) {
+                setIsChannelsSidebarOpen(true);
+            }
+        }
+
+        window.addEventListener('resize', handleResize);
+        return () => {
+            window.removeEventListener('resize', handleResize);
+        };
+    }, []);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -525,6 +543,7 @@ function HomePage() {
         setSelectedConversation(null);
         setSelected(server);
         setActiveChannel(channel ?? getDefaultChannel(server));
+        setIsChannelsSidebarOpen(true);
         setOpenMessageMenuId(null);
         setMessages([]);
         setTypingUsers([]);
@@ -541,6 +560,9 @@ function HomePage() {
         setSelectedConversation(null);
         setActiveChannel(channel);
         setOpenMessageMenuId(null);
+        if (isMobileViewport()) {
+            setIsChannelsSidebarOpen(false);
+        }
         setUnreadCounts((currentCounts) => ({
             ...currentCounts,
             [channel.id]: 0,
@@ -550,6 +572,7 @@ function HomePage() {
     function selectConversation(conversation) {
         setSelected(null);
         setActiveChannel(null);
+        setIsChannelsSidebarOpen(false);
         setOpenMessageMenuId(null);
         setMessages([]);
         setTypingUsers([]);
@@ -1003,8 +1026,17 @@ function HomePage() {
             />
 
             {/* ── Channel sidebar ── */}
+            {selected && isChannelsSidebarOpen && isMobileViewport() && (
+                <button
+                    type="button"
+                    aria-label="Fermer la barre latérale"
+                    className="channels-backdrop"
+                    onClick={() => setIsChannelsSidebarOpen(false)}
+                />
+            )}
+
             {selected && (
-                <aside className="channels-sidebar">
+                <aside className={`channels-sidebar${isChannelsSidebarOpen ? '' : ' is-closed'}`}>
                     {/* Server name header */}
                     <div className="cs-header">
                         <span className="cs-server-name">{selected.name}</span>
@@ -1158,6 +1190,19 @@ function HomePage() {
                                 </>
                             ) : (
                                 <>
+                                    {selected && (
+                                        <button
+                                            type="button"
+                                            className="channel-sidebar-toggle"
+                                            title={isChannelsSidebarOpen ? 'Fermer la barre latérale' : 'Ouvrir la barre latérale'}
+                                            onClick={() => setIsChannelsSidebarOpen((current) => !current)}
+                                        >
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <rect x="3" y="4" width="18" height="16" rx="2" />
+                                                <line x1="9" y1="4" x2="9" y2="20" />
+                                            </svg>
+                                        </button>
+                                    )}
                                     <span className="cs-channel-hash" style={{ fontSize: 20, color: '#94a3b8' }}>#</span>
                                     <span className="chat-contact-name">{activeChannel?.name ?? selected.name}</span>
                                 </>
