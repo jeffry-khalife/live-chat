@@ -8,6 +8,7 @@ import Header from '../components/Header.jsx';
 import Avatar from '../components/Avatar.jsx';
 import useSocket from '../hooks/useSocket.js';
 import { getDefaultChannel, mergeChannels, removeChannel } from '../utils/channels.js';
+import { API_URL } from '../api/config.js';
 import './home.css';
 
 function formatMessageTime(value) {
@@ -219,7 +220,7 @@ function HomePage() {
             [activeChannelId]: 0,
         }));
 
-        fetch(`/api/channels/${activeChannelId}/messages?limit=100`, {
+        fetch(`${API_URL}/api/channels/${activeChannelId}/messages?limit=100`, {
             headers: { Authorization: `Bearer ${token}` },
         })
             .then(async (response) => {
@@ -262,7 +263,7 @@ function HomePage() {
         setLoadingDmMessages(true);
         setDmUnreadCounts((currentCounts) => ({ ...currentCounts, [selectedConversationId]: 0 }));
 
-        fetch(`/api/conversations/${selectedConversationId}/messages?limit=100`, {
+        fetch(`${API_URL}/api/conversations/${selectedConversationId}/messages?limit=100`, {
             headers: { Authorization: `Bearer ${token}` },
         })
             .then(async (response) => {
@@ -300,7 +301,7 @@ function HomePage() {
 
         clearTimeout(dmSearchTimeoutRef.current);
         dmSearchTimeoutRef.current = setTimeout(() => {
-            fetch(`/api/users/search?q=${encodeURIComponent(newDmPseudo.trim())}`, {
+            fetch(`${API_URL}/api/users/search?q=${encodeURIComponent(newDmPseudo.trim())}`, {
                 headers: { Authorization: `Bearer ${token}` },
             })
                 .then((r) => r.json())
@@ -514,7 +515,7 @@ function HomePage() {
         if (!newName.trim() || creating) return;
         setCreating(true);
         try {
-            const res = await fetch('/api/servers', {
+            const res = await fetch(`${API_URL}/api/servers`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
                 body: JSON.stringify({ name: newName.trim() }),
@@ -592,7 +593,7 @@ function HomePage() {
         setOpenMessageMenuId(null);
 
         try {
-            const response = await fetch(`/api/channels/${activeChannel.id}/messages/${message.id}/delete`, {
+            const response = await fetch(`${API_URL}/api/channels/${activeChannel.id}/messages/${message.id}/delete`, {
                 method: 'POST',
                 headers: { Authorization: `Bearer ${token}` },
             });
@@ -630,7 +631,7 @@ function HomePage() {
         setOpenMessageMenuId(null);
 
         try {
-            const response = await fetch(`/api/servers/${selected.id}/members/${authorId}/remove`, {
+            const response = await fetch(`${API_URL}/api/servers/${selected.id}/members/${authorId}/remove`, {
                 method: 'POST',
                 headers: { Authorization: `Bearer ${token}` },
             });
@@ -699,7 +700,7 @@ function HomePage() {
         setCreatingDm(true);
         setDmError('');
         try {
-            const res = await fetch('/api/conversations', {
+            const res = await fetch(`${API_URL}/api/conversations`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
                 body: JSON.stringify({ pseudo }),
@@ -725,7 +726,7 @@ function HomePage() {
     async function handleInviteMember(pseudo) {
         if (!selected || !pseudo.trim()) return;
         try {
-            const res = await fetch(`/api/servers/${selected.id}/members`, {
+            const res = await fetch(`${API_URL}/api/servers/${selected.id}/members`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
                 body: JSON.stringify({ pseudo: pseudo.trim() }),
@@ -760,7 +761,7 @@ function HomePage() {
         setCreatingChannel(true);
 
         try {
-            const res = await fetch(`/api/servers/${selected.id}/channels`, {
+            const res = await fetch(`${API_URL}/api/servers/${selected.id}/channels`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -808,7 +809,7 @@ function HomePage() {
         }
 
         try {
-            const res = await fetch(`/api/servers/${selected.id}/channels/${channelId}`, {
+            const res = await fetch(`${API_URL}/api/servers/${selected.id}/channels/${channelId}`, {
                 method: 'DELETE',
                 headers: { Authorization: `Bearer ${token}` },
             });
@@ -903,7 +904,7 @@ function HomePage() {
             });
         }
 
-        const response = await fetch(`/api/conversations/${selectedConversation.id}/messages`, {
+        const response = await fetch(`${API_URL}/api/conversations/${selectedConversation.id}/messages`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -946,7 +947,7 @@ function HomePage() {
             });
         }
 
-        const response = await fetch(`/api/channels/${activeChannel.id}/messages`, {
+        const response = await fetch(`${API_URL}/api/channels/${activeChannel.id}/messages`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

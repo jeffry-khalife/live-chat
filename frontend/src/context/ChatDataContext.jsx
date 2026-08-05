@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { useAuth } from './AuthContext.jsx';
 import useSocket from '../hooks/useSocket.js';
 import { mergeChannels, removeChannel } from '../utils/channels.js';
+import { API_URL } from '../api/config.js';
 
 const ChatDataContext = createContext(null);
 
@@ -26,7 +27,7 @@ export function ChatDataProvider({ children }) {
         }
 
         setServerError('');
-        fetch('/api/servers', { headers: { Authorization: `Bearer ${token}` } })
+        fetch(`${API_URL}/api/servers`, { headers: { Authorization: `Bearer ${token}` } })
             .then(async (r) => {
                 const data = await r.json().catch(() => ({}));
                 if (!r.ok) {
@@ -47,7 +48,7 @@ export function ChatDataProvider({ children }) {
             return;
         }
 
-        fetch('/api/conversations', { headers: { Authorization: `Bearer ${token}` } })
+        fetch(`${API_URL}/api/conversations`, { headers: { Authorization: `Bearer ${token}` } })
             .then(async (r) => {
                 const data = await r.json().catch(() => ({}));
                 if (!r.ok) {

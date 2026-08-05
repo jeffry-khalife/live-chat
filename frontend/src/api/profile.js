@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+import { API_URL } from './config.js';
 
 export async function updateProfile(token, updates) {
     const res = await fetch(`${API_URL}/api/profile`, {

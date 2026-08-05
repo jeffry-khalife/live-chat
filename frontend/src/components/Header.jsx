@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useChatData } from '../context/ChatDataContext.jsx';
 import Avatar from './Avatar.jsx';
+import { API_URL } from '../api/config.js';
 import './Header.css';
 
 const STATUS_OPTIONS = [
@@ -69,7 +70,7 @@ function Header() {
 
         clearTimeout(searchTimeoutRef.current);
         searchTimeoutRef.current = setTimeout(() => {
-            fetch(`/api/users/search?q=${encodeURIComponent(query.trim())}`, {
+            fetch(`${API_URL}/api/users/search?q=${encodeURIComponent(query.trim())}`, {
                 headers: { Authorization: `Bearer ${token}` },
             })
                 .then((r) => r.json())
@@ -98,7 +99,7 @@ function Header() {
 
     async function openConversationWith(pseudo) {
         try {
-            const res = await fetch('/api/conversations', {
+            const res = await fetch(`${API_URL}/api/conversations`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
                 body: JSON.stringify({ pseudo }),
