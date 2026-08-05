@@ -20,6 +20,10 @@ router.get('/', auth, async (req, res) => {
 			where,
 			include: {
 				channels: { orderBy: { created_at: 'asc' } },
+				members: {
+					where: { user_id: req.user.id },
+					select: { user_id: true, role: true },
+				},
 				_count: { select: { members: true } },
 			},
 			orderBy: { created_at: 'asc' },

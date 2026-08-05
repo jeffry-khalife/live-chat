@@ -10,7 +10,7 @@ export default defineConfig({
       interval: 300,
     },
     proxy: {
-      '/api': process.env.VITE_PROXY_TARGET || 'http://localhost:3000',
+      '/api': 'http://backend:3000',
     },
   },
 })

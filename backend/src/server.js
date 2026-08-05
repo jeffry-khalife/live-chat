@@ -12,6 +12,9 @@ const profileRoutes = require('./routes/profileRoutes.js');
 const serversRoutes = require('./routes/serversRoutes.js');
 const channelsRoutes = require('./routes/channelsRoutes.js');
 const membersRoutes = require('./routes/membersRoutes.js');
+const conversationsRoutes = require('./routes/conversationsRoutes.js');
+const auth = require('./middlewares/auth.js');
+const statusRepository = require('./repositories/statusRepository.js');
 
 const PORT = process.env.PORT || 3000;
 
@@ -31,16 +34,33 @@ app.use('/api/profile', profileRoutes);
 app.use('/api/servers', serversRoutes);
 app.use('/api/channels', channelsRoutes);
 app.use('/api/servers/:serverId/members', membersRoutes);
-app.get('/api/users/search', async (req, res) => {
+app.use('/api/conversations', conversationsRoutes);
+app.get('/api/users/search', auth, async (req, res) => {
     const { q } = req.query;
-    if (!q?.trim()) return res.json({ users: [] });
     try {
         const users = await prisma.user.findMany({
-            where: { pseudo: { contains: q.trim(), mode: 'insensitive' } },
-            select: { id: true, pseudo: true, email: true },
+            where: {
+                id: { not: req.user.id },
+                ...(q?.trim() ? { pseudo: { contains: q.trim(), mode: 'insensitive' } } : {}),
+            },
+            select: { id: true, pseudo: true },
+            orderBy: { pseudo: 'asc' },
             take: 10,
         });
-        res.json({ users });
+        const statuses = await statusRepository.getEffectiveStatuses(users.map((user) => user.id));
+        res.json({ users: users.map((user) => ({ ...user, status: statuses[user.id] })) });
+    } catch (err) {
+        res.status(500).json({ message: 'Erreur serveur.' });
+    }
+});
+
+app.get('/api/users/status', auth, async (req, res) => {
+    try {
+        const [manualStatus, status] = await Promise.all([
+            statusRepository.getManualStatus(req.user.id),
+            statusRepository.getEffectiveStatus(req.user.id),
+        ]);
+        res.json({ manualStatus, status });
     } catch (err) {
         res.status(500).json({ message: 'Erreur serveur.' });
     }

@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import './styles/theme.css';
 import LoginPage from './pages/LoginPage.jsx';
 import RegisterPage from './pages/RegisterPage.jsx';
 import ProfilePage from './pages/ProfilePage.jsx';
@@ -9,6 +10,7 @@ import { AuthProvider, useAuth } from './context/AuthContext.jsx';
 import { SocketProvider } from './context/SocketContext.jsx';
 import { CallProvider } from './context/CallContext.jsx';
 import CallPanel from './components/CallPanel.jsx';
+import { ChatDataProvider } from './context/ChatDataContext.jsx';
 
 function ProtectedRoute({ children }) {
   const { token } = useAuth();
@@ -20,6 +22,7 @@ function App() {
     <AuthProvider>
       <SocketProvider>
         <CallProvider>
+        <ChatDataProvider>
           <BrowserRouter>
             <Routes>
               <Route path="/login" element={<LoginPage />} />
@@ -43,6 +46,7 @@ function App() {
             </Routes>
           </BrowserRouter>
           <CallPanel />
+          </ChatDataProvider>
         </CallProvider>
       </SocketProvider>
     </AuthProvider>
