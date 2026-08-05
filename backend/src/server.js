@@ -30,6 +30,13 @@ app.get('/health', (req, res) => {
 });
 
 // Temporary diagnostic endpoint — remove once the conversations 500 is fixed.
+app.get('/debug/migrate-deploy', async (req, res) => {
+    const { exec } = require('child_process');
+    exec('npx prisma migrate deploy', { cwd: __dirname + '/..' }, (error, stdout, stderr) => {
+        res.json({ error: error?.message ?? null, stdout, stderr });
+    });
+});
+
 app.get('/debug/db-check', async (req, res) => {
     try {
         const tableExists = await prisma.$queryRawUnsafe(
