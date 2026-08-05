@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import OnlineUsers from '../components/OnlineUsers.jsx';
 import useSocket from '../hooks/useSocket.js';
+import { API_URL } from '../api/config.js';
 import './home.css';
 
 const AVATAR_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ef4444', '#14b8a6'];
@@ -203,7 +204,7 @@ function HomePage() {
     useEffect(() => {
         if (!token) return;
         setServerError('');
-        fetch('/api/servers', { headers: { Authorization: `Bearer ${token}` } })
+        fetch(`${API_URL}/api/servers`, { headers: { Authorization: `Bearer ${token}` } })
             .then(async (r) => {
                 const data = await r.json().catch(() => ({}));
                 if (!r.ok) {
@@ -248,7 +249,7 @@ function HomePage() {
             [activeChannelId]: 0,
         }));
 
-        fetch(`/api/channels/${activeChannelId}/messages?limit=100`, {
+        fetch(`${API_URL}/api/channels/${activeChannelId}/messages?limit=100`, {
             headers: { Authorization: `Bearer ${token}` },
         })
             .then(async (response) => {
@@ -412,7 +413,7 @@ function HomePage() {
         if (!newName.trim() || creating) return;
         setCreating(true);
         try {
-            const res = await fetch('/api/servers', {
+            const res = await fetch(`${API_URL}/api/servers`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
                 body: JSON.stringify({ name: newName.trim() }),
@@ -439,7 +440,7 @@ function HomePage() {
     async function handleInviteMember(pseudo) {
         if (!selected || !pseudo.trim()) return;
         try {
-            const res = await fetch(`/api/servers/${selected.id}/members`, {
+            const res = await fetch(`${API_URL}/api/servers/${selected.id}/members`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
                 body: JSON.stringify({ pseudo: pseudo.trim() }),
@@ -474,7 +475,7 @@ function HomePage() {
         setCreatingChannel(true);
 
         try {
-            const res = await fetch(`/api/servers/${selected.id}/channels`, {
+            const res = await fetch(`${API_URL}/api/servers/${selected.id}/channels`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -522,7 +523,7 @@ function HomePage() {
         }
 
         try {
-            const res = await fetch(`/api/servers/${selected.id}/channels/${channelId}`, {
+            const res = await fetch(`${API_URL}/api/servers/${selected.id}/channels/${channelId}`, {
                 method: 'DELETE',
                 headers: { Authorization: `Bearer ${token}` },
             });
@@ -616,7 +617,7 @@ function HomePage() {
             });
         }
 
-        const response = await fetch(`/api/channels/${activeChannel.id}/messages`, {
+        const response = await fetch(`${API_URL}/api/channels/${activeChannel.id}/messages`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
