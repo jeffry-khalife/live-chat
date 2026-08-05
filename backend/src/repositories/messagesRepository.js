@@ -1,126 +1,56 @@
-const { ObjectId } = require('mongodb');
-const { connectMongo } = require('../config/mongo.js');
-const redisConfig = require('../config/redis.js');
+const crypto = require('crypto');
 
-const RECENT_MESSAGES_LIMIT = 100;
+// In-memory message store: no external DB required, but history is lost on
+// backend restart/redeploy and isn't shared across multiple instances.
+const messagesByRoom = new Map(); // `${scope}:${roomId}` -> message[]
+const messagesById = new Map(); // id -> message
 
-let mongoDbPromise;
-
-async function getDatabase() {
-    if (!mongoDbPromise) {
-        mongoDbPromise = connectMongo();
-    }
-
-    return mongoDbPromise;
+function roomKey(scope, roomId) {
+    return `${scope}:${roomId}`;
 }
 
-async function getRedisClient() {
-    try {
-        if (typeof redisConfig.connectRedis === 'function') {
-            return await redisConfig.connectRedis();
-        }
-
-        return redisConfig;
-    } catch (error) {
-        return null;
-    }
-}
-
-function normalizeMessage(document) {
-    if (!document) {
+function normalizeMessage(message) {
+    if (!message) {
         return null;
     }
 
     const base = {
-        id: document._id?.toString(),
-        scope: document.scope,
-        authorId: Number(document.authorId),
-        content: document.content,
-        attachments: document.attachments ?? [],
-        reactions: document.reactions ?? [],
-        createdAt: document.createdAt,
-        editedAt: document.editedAt ?? null,
-        deletedAt: document.deletedAt ?? null,
-        deletedByAdmin: Boolean(document.deletedByAdmin),
+        id: message.id,
+        scope: message.scope,
+        authorId: Number(message.authorId),
+        content: message.content,
+        attachments: message.attachments ?? [],
+        reactions: message.reactions ?? [],
+        createdAt: message.createdAt,
+        editedAt: message.editedAt ?? null,
+        deletedAt: message.deletedAt ?? null,
+        deletedByAdmin: Boolean(message.deletedByAdmin),
     };
 
-    if (document.scope === 'dm') {
-        return { ...base, conversationId: Number(document.roomId) };
+    if (message.scope === 'dm') {
+        return { ...base, conversationId: Number(message.roomId) };
     }
 
-    return { ...base, channelId: Number(document.roomId) };
-}
-
-function cacheKey(scope, roomId) {
-    return `messages:${scope}:${roomId}:recent`;
-}
-
-async function getRecentMessages(scope, roomId) {
-    const client = await getRedisClient();
-
-    if (!client) {
-        return null;
-    }
-
-    const cached = await client.get(cacheKey(scope, roomId));
-
-    if (!cached) {
-        return null;
-    }
-
-    return JSON.parse(cached);
-}
-
-async function setRecentMessages(scope, roomId, messages) {
-    const client = await getRedisClient();
-
-    if (!client) {
-        return;
-    }
-
-    await client.set(cacheKey(scope, roomId), JSON.stringify(messages.slice(-RECENT_MESSAGES_LIMIT)), { EX: 30 });
+    return { ...base, channelId: Number(message.roomId) };
 }
 
 async function findByRoom(scope, roomId, options = {}) {
     const { limit = 50, before } = options;
-
-    if (!before) {
-        const cached = await getRecentMessages(scope, roomId);
-
-        if (cached) {
-            return cached.slice(-limit);
-        }
-    }
-
-    const db = await getDatabase();
-    const query = {
-        roomId: String(roomId),
-        scope,
-    };
+    const key = roomKey(scope, roomId);
+    let messages = messagesByRoom.get(key) ?? [];
 
     if (before) {
-        query.createdAt = { $lt: new Date(before) };
+        const beforeDate = new Date(before);
+        messages = messages.filter((message) => message.createdAt < beforeDate);
     }
 
-    const documents = await db
-        .collection('messages')
-        .find(query)
-        .sort({ createdAt: 1, _id: 1 })
-        .limit(limit)
-        .toArray();
-
-    const messages = documents.map(normalizeMessage);
-
-    if (!before) {
-        await setRecentMessages(scope, roomId, messages);
-    }
-
-    return messages;
+    return messages.slice(-limit).map(normalizeMessage);
 }
 
 async function createMessage({ roomId, scope, authorId, content, attachments }) {
-    const db = await getDatabase();
-    const document = {
+    const key = roomKey(scope, roomId);
+    const message = {
+        id: crypto.randomUUID(),
         roomId: String(roomId),
         scope,
         authorId: String(authorId),
@@ -129,21 +59,16 @@ async function createMessage({ roomId, scope, authorId, content, attachments }) 
         reactions: [],
         createdAt: new Date(),
         editedAt: null,
+        deletedAt: null,
+        deletedByAdmin: false,
     };
 
-    const result = await db.collection('messages').insertOne(document);
-    const createdMessage = normalizeMessage({ ...document, _id: result.insertedId });
+    const roomMessages = messagesByRoom.get(key) ?? [];
+    roomMessages.push(message);
+    messagesByRoom.set(key, roomMessages);
+    messagesById.set(message.id, message);
 
-    try {
-        const cached = await getRecentMessages(scope, roomId);
-
-        if (cached) {
-            await setRecentMessages(scope, roomId, [...cached, createdMessage]);
-        }
-    } catch (error) {
-    }
-
-    return createdMessage;
+    return normalizeMessage(message);
 }
 
 async function findByChannelId(channelId, options = {}) {
@@ -163,135 +88,48 @@ async function createDmMessage({ conversationId, authorId, content, attachments 
 }
 
 async function findById(messageId) {
-    if (!ObjectId.isValid(messageId)) {
-        return null;
-    }
-
-    const db = await getDatabase();
-    const document = await db.collection('messages').findOne({ _id: new ObjectId(messageId) });
-
-    return normalizeMessage(document);
+    return normalizeMessage(messagesById.get(messageId));
 }
 
 async function deleteById(messageId) {
-    if (!ObjectId.isValid(messageId)) {
+    const message = messagesById.get(messageId);
+
+    if (!message) {
         return null;
     }
 
-    const db = await getDatabase();
-    const objectId = new ObjectId(messageId);
-    const document = await db.collection('messages').findOne({ _id: objectId });
+    const key = roomKey(message.scope, message.roomId);
+    const roomMessages = messagesByRoom.get(key) ?? [];
+    messagesByRoom.set(key, roomMessages.filter((existing) => existing.id !== messageId));
+    messagesById.delete(messageId);
 
-    if (!document) {
+    return normalizeMessage(message);
+}
+
+function applySoftDelete(messageId, content, deletedByAdmin) {
+    const message = messagesById.get(messageId);
+
+    if (!message) {
         return null;
     }
 
-    await db.collection('messages').deleteOne({ _id: objectId });
-    const deletedMessage = normalizeMessage(document);
+    message.content = content;
+    message.editedAt = new Date();
+    message.deletedAt = new Date();
+    message.deletedByAdmin = deletedByAdmin;
+    message.attachments = [];
+    message.reactions = [];
 
-    try {
-        const cached = await getRecentMessages(document.scope, document.roomId);
-
-        if (cached) {
-            await setRecentMessages(
-                document.scope,
-                document.roomId,
-                cached.filter((message) => String(message.id) !== String(messageId)),
-            );
-        }
-    } catch (error) {
-    }
-
-    return deletedMessage;
+    return normalizeMessage(message);
 }
 
 async function softDeleteByAdmin(messageId) {
-    if (!ObjectId.isValid(messageId)) {
-        return null;
-    }
-
-    const db = await getDatabase();
-    const objectId = new ObjectId(messageId);
-    const updateResult = await db.collection('messages').findOneAndUpdate(
-        { _id: objectId },
-        {
-            $set: {
-                content: 'Message supprimé par l\'administrateur.',
-                editedAt: new Date(),
-                deletedAt: new Date(),
-                deletedByAdmin: true,
-                attachments: [],
-                reactions: [],
-            },
-        },
-        { returnDocument: 'after' },
-    );
-
-    if (!updateResult) {
-        return null;
-    }
-
-    const updatedMessage = normalizeMessage(updateResult);
-
-    try {
-        const cached = await getRecentMessages(updateResult.scope, updateResult.roomId);
-
-        if (cached) {
-            await setRecentMessages(
-                updateResult.scope,
-                updateResult.roomId,
-                cached.map((message) => (String(message.id) === String(messageId) ? updatedMessage : message)),
-            );
-        }
-    } catch (error) {
-    }
-
-    return updatedMessage;
+    return applySoftDelete(messageId, 'Message supprimé par l\'administrateur.', true);
 }
 
 async function softDeleteByAuthor(messageId, pseudo) {
-    if (!ObjectId.isValid(messageId)) {
-        return null;
-    }
-
-    const db = await getDatabase();
-    const objectId = new ObjectId(messageId);
     const safePseudo = pseudo?.trim() || 'Utilisateur';
-    const updateResult = await db.collection('messages').findOneAndUpdate(
-        { _id: objectId },
-        {
-            $set: {
-                content: `${safePseudo} a supprimé son message.`,
-                editedAt: new Date(),
-                deletedAt: new Date(),
-                deletedByAdmin: false,
-                attachments: [],
-                reactions: [],
-            },
-        },
-        { returnDocument: 'after' },
-    );
-
-    if (!updateResult) {
-        return null;
-    }
-
-    const updatedMessage = normalizeMessage(updateResult);
-
-    try {
-        const cached = await getRecentMessages(updateResult.scope, updateResult.roomId);
-
-        if (cached) {
-            await setRecentMessages(
-                updateResult.scope,
-                updateResult.roomId,
-                cached.map((message) => (String(message.id) === String(messageId) ? updatedMessage : message)),
-            );
-        }
-    } catch (error) {
-    }
-
-    return updatedMessage;
+    return applySoftDelete(messageId, `${safePseudo} a supprimé son message.`, false);
 }
 
 module.exports = {
