@@ -55,6 +55,12 @@ export function AuthProvider({ children }) {
             }
         };
 
+        // Refresh immediately on mount too: the access token may already be
+        // close to (or past) its 15min expiry by the time this effect runs
+        // — e.g. after a page reload — so waiting a full interval first can
+        // leave a window where requests fail with an expired token.
+        silentRefresh();
+
         const interval = setInterval(silentRefresh, REFRESH_INTERVAL_MS);
         return () => clearInterval(interval);
         // eslint-disable-next-line react-hooks/exhaustive-deps
