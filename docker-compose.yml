@@ -1,0 +1,95 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    platform: linux/amd64
+    restart: "no"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: livechat
+    ports:
+      - "55432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  mongo:
+    image: mongo:7
+    platform: linux/amd64
+    restart: "no"
+    ports:
+      - "57017:27017"
+    volumes:
+      - mongo-data:/data/db
+
+  redis:
+    image: redis:7-alpine
+    platform: linux/amd64
+    restart: "no"
+    ports:
+      - "56379:6379"
+
+  coturn:
+    image: coturn/coturn:4.6
+    restart: "no"
+    command:
+      - "-n"
+      - "--log-file=stdout"
+      - "--listening-port=3478"
+      - "--min-port=49160"
+      - "--max-port=49200"
+      - "--realm=livechat.local"
+      - "--user=livechat:livechatturn"
+      - "--lt-cred-mech"
+      - "--no-cli"
+      - "--fingerprint"
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      - "49160-49200:49160-49200/udp"
+
+  backend:
+    build:
+      context: ./backend
+    restart: "no"
+    depends_on:
+      - postgres
+      - mongo
+      - redis
+    env_file:
+      - ./backend/.env
+    environment:
+      PORT: 3000
+      CLIENT_ORIGIN: http://localhost:5173
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/livechat
+      MONGO_URL: mongodb://mongo:27017/livechat
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    command: sh -c "npx prisma generate && npx prisma migrate deploy && npm run dev"
+
+  frontend:
+    build:
+      context: ./frontend
+      target: build
+    restart: "no"
+    depends_on:
+      - backend
+    environment:
+      VITE_API_URL: http://localhost:3000
+      VITE_PROXY_TARGET: http://backend:3000
+      VITE_TURN_URL: turn:localhost:3478
+      VITE_TURN_USERNAME: livechat
+      VITE_TURN_CREDENTIAL: livechatturn
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: sh -c "npm run dev -- --host 0.0.0.0"
+
+volumes:
+  postgres-data:
+  mongo-data:
