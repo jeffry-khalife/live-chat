@@ -48,15 +48,18 @@ async function loadUserProfile(userId) {
 }
 
 async function joinAllAccessibleServers(socket, user) {
+    let where = {};
+    if (user.role !== 'admin') {
+        where = {
+            OR: [
+                { owner_id: user.id },
+                { members: { some: { user_id: user.id } } },
+            ],
+        };
+    }
+
     const servers = await prisma.server.findMany({
-        where: user.role === 'admin'
-            ? {}
-            : {
-                  OR: [
-                      { owner_id: user.id },
-                      { members: { some: { user_id: user.id } } },
-                  ],
-              },
+        where,
         select: { id: true },
     });
 
@@ -73,11 +76,14 @@ async function syncPresenceForServers(io, serverIds, user, action) {
     }
 
     for (const serverId of serverIds) {
-        const onlineUsers = action === 'remove'
-            ? await presenceRepository.removeUserPresence(serverId, user.id)
-            : action === 'touch'
-                ? await presenceRepository.touchUserPresence(serverId, user.id)
-                : await presenceRepository.setUserPresence(serverId, user);
+        let onlineUsers;
+        if (action === 'remove') {
+            onlineUsers = await presenceRepository.removeUserPresence(serverId, user.id);
+        } else if (action === 'touch') {
+            onlineUsers = await presenceRepository.touchUserPresence(serverId, user.id);
+        } else {
+            onlineUsers = await presenceRepository.setUserPresence(serverId, user);
+        }
 
         io.to(`server:${serverId}`).emit('server:presence-updated', {
             serverId,
