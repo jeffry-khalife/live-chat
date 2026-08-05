@@ -274,7 +274,7 @@ function HomePage() {
             })
             .then((data) => {
                 if (!cancelled) {
-                    setDmMessages(data.messages ?? []);
+                    setDmMessages((data.messages ?? []).map(normalizeMessage));
                 }
             })
             .catch(() => {
@@ -326,7 +326,7 @@ function HomePage() {
 
         const handleDmMessage = ({ conversationId, message }) => {
             if (Number(conversationId) === Number(selectedConversationId)) {
-                setDmMessages((currentMessages) => [...currentMessages, message]);
+                setDmMessages((currentMessages) => [...currentMessages, normalizeMessage(message)]);
                 return;
             }
 
@@ -895,7 +895,7 @@ function HomePage() {
                     content,
                 }, (response) => {
                     if (response?.ok && response.message && Number(response.message.conversationId) === Number(conversationId)) {
-                        setDmMessages((currentMessages) => [...currentMessages, response.message]);
+                        setDmMessages((currentMessages) => [...currentMessages, normalizeMessage(response.message)]);
                     }
 
                     resolve(response);
@@ -915,7 +915,7 @@ function HomePage() {
         const data = await response.json();
 
         if (response.ok && data.message) {
-            setDmMessages((currentMessages) => [...currentMessages, data.message]);
+            setDmMessages((currentMessages) => [...currentMessages, normalizeMessage(data.message)]);
         }
 
         return data;

@@ -358,7 +358,13 @@
 .msg-bubble-row {
     display: flex;
     align-items: flex-start;
+    justify-content: flex-start;
     gap: 8px;
+    width: 100%;
+}
+
+.msg-sent .msg-bubble-row {
+    justify-content: flex-end;
 }
 
 .msg-actions-wrap {
@@ -465,8 +471,8 @@
 
 /* Received */
 .msg-bubble {
-    display: block;
-    width: fit-content;
+    display: inline-block;
+    width: auto;
     max-width: 75%;
     padding: 9px 14px;
     border-radius: 18px;
